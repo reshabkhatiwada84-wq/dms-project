@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import TrashView from './pages/TrashView';
 
 function App() {
+  // Small comment to trigger new Netlify build
   return (
     <Router>
       <AuthProvider>
