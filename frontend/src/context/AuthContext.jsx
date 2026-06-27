@@ -5,8 +5,12 @@ export const AuthContext = createContext();
 
 // Set API base URL
 const API_URL = import.meta.env.VITE_API_URL || '';
+console.log('🔧 API_URL being used:', API_URL); // Debug log
 if (API_URL) {
   axios.defaults.baseURL = API_URL;
+  console.log('✅ Axios baseURL set to:', axios.defaults.baseURL);
+} else {
+  console.warn('⚠️ No API_URL set - requests will go to current domain!');
 }
 
 export const AuthProvider = ({ children }) => {
