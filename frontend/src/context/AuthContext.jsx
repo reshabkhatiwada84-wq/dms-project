@@ -4,14 +4,42 @@ import axios from 'axios';
 export const AuthContext = createContext();
 
 // Set API base URL
-const API_URL = import.meta.env.VITE_API_URL || '';
-console.log('🔧 API_URL being used:', API_URL); // Debug log
+const API_URL = import.meta.env.VITE_API_URL;
+console.log('🔧 Full environment variables available:', import.meta.env);
+console.log('🔧 API_URL from env:', API_URL);
+
 if (API_URL) {
   axios.defaults.baseURL = API_URL;
   console.log('✅ Axios baseURL set to:', axios.defaults.baseURL);
 } else {
-  console.warn('⚠️ No API_URL set - requests will go to current domain!');
+  console.error('❌ NO VITE_API_URL FOUND! Requests will fail!');
 }
+
+// Add an axios interceptor to log every request
+axios.interceptors.request.use(
+  (config) => {
+    console.log('🚀 Sending request to:', config.baseURL + config.url);
+    console.log('Request config:', config);
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add an interceptor for responses too
+axios.interceptors.response.use(
+  (response) => {
+    console.log('✅ Response received:', response);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Request failed:', error);
+    console.error('Error response:', error.response);
+    console.error('Error config:', error.config);
+    return Promise.reject(error);
+  }
+);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
