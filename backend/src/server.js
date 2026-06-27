@@ -18,7 +18,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Enable CORS
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173', // Vite dev server
+  process.env.FRONTEND_URL, // Production frontend URL (Netlify)
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 
 // Mount routers
 app.use('/api/auth', require('./routes/auth'));
@@ -47,7 +61,7 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Server running on port ${PORT} at 127.0.0.1`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
 

@@ -3,7 +3,11 @@ import axios from 'axios';
 
 export const AuthContext = createContext();
 
-// Backend Base URL is now handled by Vite Proxy in development
+// Set API base URL
+const API_URL = import.meta.env.VITE_API_URL || '';
+if (API_URL) {
+  axios.defaults.baseURL = API_URL;
+}
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
