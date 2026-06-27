@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "axios": "^1.18.0",
-    "document-management-system": "file:..",
     "docx-preview": "^0.3.7",
     "lucide-react": "^1.21.0",
     "mammoth": "^1.12.0",
