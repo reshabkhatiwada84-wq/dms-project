@@ -17,20 +17,9 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Enable CORS
-const allowedOrigins = [
-  'http://localhost:5173', // Vite dev server
-  process.env.FRONTEND_URL, // Production frontend URL (Netlify)
-].filter(Boolean);
-
+// Enable CORS (temporarily allow all for debugging)
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true,
   credentials: true,
 }));
 
