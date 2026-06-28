@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { Folder, FolderOpen, FolderPlus, Pencil, Trash2, X, Check } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 
 /**
  * FolderPanel
@@ -18,6 +19,7 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
   const [renameValue, setRenameValue] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   // ── Create ────────────────────────────────────────────────────────────────
   const handleCreate = async () => {
@@ -60,16 +62,25 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
   };
 
   // ── Delete ────────────────────────────────────────────────────────────────
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this folder? Documents inside will become unorganized.')) return;
-    setError('');
-    try {
-      await axios.delete(`/api/folders/${id}`);
-      if (selectedFolder === id) onSelectFolder('all');
-      onFoldersChange();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete folder');
-    }
+  const handleDelete = (id) => {
+    setConfirmConfig({
+      title: 'Delete Folder',
+      message: 'Delete this folder? Documents inside will become unorganized.',
+      confirmText: 'Delete',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        setError('');
+        try {
+          await axios.delete(`/api/folders/${id}`);
+          if (selectedFolder === id) onSelectFolder('all');
+          onFoldersChange();
+        } catch (err) {
+          setError(err.response?.data?.message || 'Failed to delete folder');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   const navItems = [
@@ -220,6 +231,15 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={!!confirmConfig}
+        onClose={() => setConfirmConfig(null)}
+        title={confirmConfig?.title}
+        message={confirmConfig?.message}
+        confirmText={confirmConfig?.confirmText}
+        confirmColor={confirmConfig?.confirmColor}
+        onConfirm={confirmConfig?.onConfirm}
+      />
     </div>
   );
 };

@@ -47,6 +47,11 @@ const documentSchema = mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    sharePermission: {
+      type: String,
+      enum: ['view', 'edit'],
+      default: 'view',
+    },
     folder: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Folder',

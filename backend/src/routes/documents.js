@@ -297,13 +297,43 @@ router.post('/:id/share', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to share this document' });
     }
 
-    if (!document.shareToken) {
-      document.shareToken = crypto.randomBytes(16).toString('hex');
-      await document.save();
+    const { permission } = req.body;
+    if (permission && ['view', 'edit'].includes(permission)) {
+      document.sharePermission = permission;
     }
 
-    const shareLink = `http://127.0.0.1:5000/api/documents/public/${document.shareToken}`;
-    res.json({ shareLink, shareToken: document.shareToken });
+    if (!document.shareToken) {
+      document.shareToken = crypto.randomBytes(16).toString('hex');
+    }
+    
+    await document.save();
+
+    res.json({ shareToken: document.shareToken, permission: document.sharePermission });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Get public info about a shared document
+// @route   GET /api/documents/public-info/:shareToken
+// @access  Public
+router.get('/public-info/:shareToken', async (req, res) => {
+  try {
+    const document = await Document.findOne({ shareToken: req.params.shareToken, isDeleted: { $ne: true } });
+
+    if (!document) {
+      return res.status(404).json({ message: 'Invalid or expired share link' });
+    }
+
+    res.json({
+      title: document.title,
+      description: document.description,
+      size: document.size,
+      category: document.category,
+      originalName: document.originalName,
+      sharePermission: document.sharePermission,
+      createdAt: document.createdAt
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -330,6 +360,76 @@ router.get('/public/:shareToken', async (req, res) => {
       }
     });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Upload a new version to a shared document
+// @route   POST /api/documents/public/:shareToken/upload
+// @access  Public (with valid edit token)
+router.post('/public/:shareToken/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const document = await Document.findOne({ shareToken: req.params.shareToken, isDeleted: { $ne: true } });
+
+    if (!document) {
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return res.status(404).json({ message: 'Invalid share link' });
+    }
+
+    if (document.sharePermission !== 'edit') {
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return res.status(403).json({ message: 'This share link does not have edit permissions' });
+    }
+
+    // Unset current versions
+    await Version.updateMany(
+      { documentId: document._id },
+      { isCurrentVersion: false }
+    );
+
+    const versionCount = await Version.countDocuments({ documentId: document._id });
+
+    let vHash = null;
+    try {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      vHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    } catch (e) {
+      // Non-critical
+    }
+
+    // Create new version
+    await Version.create({
+      documentId: document._id,
+      versionNumber: versionCount + 1,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      filePath: req.file.path,
+      mimeType: req.file.mimetype,
+      fileSize: req.file.size,
+      uploadedBy: document.uploadedBy, // Attribute to the original owner
+      isCurrentVersion: true,
+      fileHash: vHash,
+      actionLog: [{ action: 'uploaded', note: 'Uploaded via public share link' }],
+    });
+
+    // Update main document pointer
+    document.filename = req.file.filename;
+    document.originalName = req.file.originalname;
+    document.mimeType = req.file.mimetype;
+    document.size = req.file.size;
+    document.filePath = req.file.path;
+    await document.save();
+
+    res.status(200).json({ message: 'New version uploaded successfully' });
+  } catch (error) {
+    console.error(error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ message: error.message });
   }
 });

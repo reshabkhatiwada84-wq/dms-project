@@ -4,6 +4,7 @@ import {
   X, History, Download, RotateCcw, Trash2, CheckCircle2,
   Archive, Clock, User, HardDrive, AlertCircle, Upload, Loader2
 } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 import { AuthContext } from '../context/AuthContext';
 
 const formatBytes = (bytes, decimals = 1) => {
@@ -79,6 +80,7 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
   const [actionLoading, setActionLoading] = useState(null); // versionId being acted on
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [notification, setNotification] = useState('');
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   const fetchVersions = async () => {
     if (!document) return;
@@ -124,39 +126,55 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
   };
 
   const handleRestore = async (version) => {
-    if (!window.confirm(`Restore v${version.versionNumber}? This will make it the active version.`)) return;
-    setActionLoading(version._id);
-    try {
-      await axios.post(`/api/versions/${document._id}/restore/${version._id}`);
-      notify(`✓ Restored to v${version.versionNumber} successfully`);
-      fetchVersions();
-      if (onVersionChange) onVersionChange();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to restore version');
-    } finally {
-      setActionLoading(null);
-    }
+    setConfirmConfig({
+      title: 'Restore Version',
+      message: `Restore v${version.versionNumber}? This will make it the active version.`,
+      confirmText: 'Restore',
+      confirmColor: 'bg-sky-500 hover:bg-sky-600',
+      onConfirm: async () => {
+        setActionLoading(version._id);
+        try {
+          await axios.post(`/api/versions/${document._id}/restore/${version._id}`);
+          notify(`✓ Restored to v${version.versionNumber} successfully`);
+          fetchVersions();
+          if (onVersionChange) onVersionChange();
+        } catch (err) {
+          setError(err.response?.data?.message || 'Failed to restore version');
+        } finally {
+          setActionLoading(null);
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   const handleDelete = async (version) => {
     const isLastVersion = versions.length <= 1;
-    if (!window.confirm(`Delete v${version.versionNumber}?${isLastVersion ? ' This is the only version left — the entire document will be permanently removed.' : ' This cannot be undone.'}`)) return;
-    setActionLoading(version._id);
-    try {
-      const res = await axios.delete(`/api/versions/${document._id}/${version._id}`);
-      if (res.data.documentDeleted) {
-        onClose();
-        if (onVersionChange) onVersionChange();
-      } else {
-        notify(`v${version.versionNumber} deleted`);
-        fetchVersions();
-        if (onVersionChange) onVersionChange();
+    setConfirmConfig({
+      title: 'Delete Version',
+      message: `Delete v${version.versionNumber}?${isLastVersion ? ' This is the only version left — the entire document will be permanently removed.' : ' This cannot be undone.'}`,
+      confirmText: 'Delete',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        setActionLoading(version._id);
+        try {
+          const res = await axios.delete(`/api/versions/${document._id}/${version._id}`);
+          if (res.data.documentDeleted) {
+            onClose();
+            if (onVersionChange) onVersionChange();
+          } else {
+            notify(`v${version.versionNumber} deleted`);
+            fetchVersions();
+            if (onVersionChange) onVersionChange();
+          }
+        } catch (err) {
+          setError(err.response?.data?.message || 'Failed to delete version');
+        } finally {
+          setActionLoading(null);
+          setConfirmConfig(null);
+        }
       }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete version');
-    } finally {
-      setActionLoading(null);
-    }
+    });
   };
 
   const handleNewVersionSuccess = () => {
@@ -379,6 +397,15 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
           </button>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={!!confirmConfig}
+        onClose={() => setConfirmConfig(null)}
+        title={confirmConfig?.title}
+        message={confirmConfig?.message}
+        confirmText={confirmConfig?.confirmText}
+        confirmColor={confirmConfig?.confirmColor}
+        onConfirm={confirmConfig?.onConfirm}
+      />
     </div>
   );
 };

@@ -6,10 +6,12 @@ import PreviewModal from '../components/PreviewModal';
 import FolderPanel from '../components/FolderPanel';
 import MoveFolderModal from '../components/MoveFolderModal';
 import VersionHistoryModal from '../components/VersionHistoryModal';
+import ShareModal from '../components/ShareModal';
 import {
   Download, FileText, Search, Trash2, Upload, AlertCircle,
   HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch
 } from 'lucide-react';
+import ConfirmModal from '../components/ConfirmModal';
 
 // ─── Mini Bar Chart (pure CSS/SVG, no library needed) ───────────────────────
 const ActivityChart = ({ data }) => {
@@ -141,12 +143,17 @@ const Dashboard = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   // ── Folder state ──────────────────────────────────────────────────────────
   const [folders, setFolders] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState('all'); // 'all' | 'none' | folderId
   const [moveDoc, setMoveDoc] = useState(null); // document to move
   const [isMoveOpen, setIsMoveOpen] = useState(false);
+
+  // ── Share state ───────────────────────────────────────────────────────────
+  const [shareDoc, setShareDoc] = useState(null);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // ── Version History state ─────────────────────────────────────────────────
   const [versionDoc, setVersionDoc] = useState(null);
@@ -206,15 +213,23 @@ const Dashboard = () => {
   }, [fetchDocuments]);
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      try {
-        await axios.delete(`/api/documents/${id}`);
-        fetchDocuments();
-        fetchStats();
-      } catch (err) {
-        alert(err.response?.data?.message || 'Failed to delete document');
+    setConfirmConfig({
+      title: 'Delete Document',
+      message: 'Are you sure you want to delete this document?',
+      confirmText: 'Delete',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        try {
+          await axios.delete(`/api/documents/${id}`);
+          fetchDocuments();
+          fetchStats();
+        } catch (err) {
+          alert(err.response?.data?.message || 'Failed to delete document');
+        } finally {
+          setConfirmConfig(null);
+        }
       }
-    }
+    });
   };
 
   const handleDownload = async (id, originalName) => {
@@ -238,26 +253,9 @@ const Dashboard = () => {
     setIsMoveOpen(true);
   };
 
-  const handleShare = async (id, title) => {
-    try {
-      const res = await axios.post(`/api/documents/${id}/share`);
-      const { shareLink } = res.data;
-      
-      const shareText = `Check out this document: ${title}`;
-      
-      if (navigator.share) {
-        await navigator.share({
-          title: title,
-          text: shareText,
-          url: shareLink
-        });
-      } else {
-        navigator.clipboard.writeText(shareLink);
-        alert(`Link copied to clipboard!\n\nYou can share this link via WhatsApp or Email:\n${shareLink}`);
-      }
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to generate share link');
-    }
+  const handleShare = (doc) => {
+    setShareDoc(doc);
+    setIsShareOpen(true);
   };
 
   const formatBytes = (bytes, decimals = 1) => {
@@ -669,17 +667,17 @@ const Dashboard = () => {
                     )}
                   </div>
                   {/* ── Action Toolbar ── */}
-                  <div className="border-t border-white/5 mt-3 pt-3 flex items-center justify-between">
+                  <div className="border-t border-white/5 mt-3 pt-3 flex flex-wrap gap-2 items-center justify-between">
                     <div className="flex items-center gap-1">
                       <button onClick={(e) => { e.stopPropagation(); handleDownload(doc._id, doc.originalName); }}
-                        title="Download" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 transition-colors">
+                        title="Download" className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 transition-colors">
                         <Download className="h-3.5 w-3.5" />
-                        Download
+                        <span className="hidden sm:inline">Download</span>
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleShare(doc._id, doc.title); }}
-                        title="Share" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
+                      <button onClick={(e) => { e.stopPropagation(); handleShare(doc); }}
+                        title="Share" className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
                         <Share2 className="h-3.5 w-3.5" />
-                        Share
+                        <span className="hidden sm:inline">Share</span>
                       </button>
                     </div>
                     <div className="flex items-center gap-1">
@@ -797,6 +795,16 @@ const Dashboard = () => {
       )}
 
       {/* Modals */}
+      <ConfirmModal
+        isOpen={!!confirmConfig}
+        onClose={() => setConfirmConfig(null)}
+        title={confirmConfig?.title}
+        message={confirmConfig?.message}
+        confirmText={confirmConfig?.confirmText}
+        confirmColor={confirmConfig?.confirmColor}
+        onConfirm={confirmConfig?.onConfirm}
+      />
+      <ShareModal isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} document={shareDoc} />
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}

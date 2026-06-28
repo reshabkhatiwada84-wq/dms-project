@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import TrashView from './pages/TrashView';
+import SharedDocumentView from './pages/SharedDocumentView';
 
 function App() {
   // Small comment to trigger new Netlify build
@@ -21,6 +22,7 @@ function App() {
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Register />} />
+              <Route path="/shared/:shareToken" element={<SharedDocumentView />} />
 
               {/* Protected User Routes */}
               <Route
