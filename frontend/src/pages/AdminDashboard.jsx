@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { Users, FileText, HardDrive, ShieldAlert, Trash2, ArrowLeftRight } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 const AdminDashboard = () => {
   const { user: currentUser } = useContext(AuthContext);
@@ -9,6 +10,7 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -32,32 +34,48 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-  const handleToggleRole = async (userObj) => {
+  const handleToggleRole = (userObj) => {
     const isMakingAdmin = userObj.role !== 'admin';
     const actionText = isMakingAdmin ? 'make' : 'remove admin rights from';
     const roleText = isMakingAdmin ? 'an ADMIN' : 'a standard USER';
 
-    if (window.confirm(`Are you sure you want to ${actionText} ${userObj.name} (${roleText})?`)) {
-      try {
-        await axios.put(`/api/admin/users/${userObj._id}/role`);
-        fetchData();
-      } catch (err) {
-        console.error(err);
-        alert(err.response?.data?.message || 'Failed to update user role');
+    setConfirmConfig({
+      title: isMakingAdmin ? 'Make Admin' : 'Remove Admin Rights',
+      message: `Are you sure you want to ${actionText} ${userObj.name} (${roleText})?`,
+      confirmText: 'Confirm',
+      confirmColor: 'bg-amber-500 hover:bg-amber-600',
+      onConfirm: async () => {
+        try {
+          await axios.put(`/api/admin/users/${userObj._id}/role`);
+          fetchData();
+        } catch (err) {
+          console.error(err);
+          alert(err.response?.data?.message || 'Failed to update user role');
+        } finally {
+          setConfirmConfig(null);
+        }
       }
-    }
+    });
   };
 
-  const handleDeleteUser = async (userId) => {
-    if (window.confirm('WARNING: Deleting a user will permanently remove their account AND all documents they have uploaded. Proceed?')) {
-      try {
-        await axios.delete(`/api/admin/users/${userId}`);
-        fetchData();
-      } catch (err) {
-        console.error(err);
-        alert(err.response?.data?.message || 'Failed to delete user');
+  const handleDeleteUser = (userId) => {
+    setConfirmConfig({
+      title: 'Delete User',
+      message: 'WARNING: Deleting a user will permanently remove their account AND all documents they have uploaded. Proceed?',
+      confirmText: 'Delete',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        try {
+          await axios.delete(`/api/admin/users/${userId}`);
+          fetchData();
+        } catch (err) {
+          console.error(err);
+          alert(err.response?.data?.message || 'Failed to delete user');
+        } finally {
+          setConfirmConfig(null);
+        }
       }
-    }
+    });
   };
 
   const formatBytes = (bytes, decimals = 2) => {
@@ -232,6 +250,16 @@ const AdminDashboard = () => {
           </table>
         </div>
       </div>
+      
+      <ConfirmModal
+        isOpen={!!confirmConfig}
+        onClose={() => setConfirmConfig(null)}
+        title={confirmConfig?.title}
+        message={confirmConfig?.message}
+        confirmText={confirmConfig?.confirmText}
+        confirmColor={confirmConfig?.confirmColor}
+        onConfirm={confirmConfig?.onConfirm}
+      />
     </div>
   );
 };
