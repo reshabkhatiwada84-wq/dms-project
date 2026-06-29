@@ -201,6 +201,10 @@ router.get('/', protect, async (req, res) => {
       ];
     }
 
+    if (req.query.favoritesOnly === 'true') {
+      query.favoritedBy = req.user._id;
+    }
+
     // folder filter: 'none' = unorganized, a folder id = that folder
     if (req.query.folder === 'none') {
       query.folder = null;
@@ -476,6 +480,36 @@ router.put('/:id/folder', protect, async (req, res) => {
       .populate('uploadedBy', 'name email')
       .populate('folder', 'name');
     res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Toggle favorite status of a document
+// @route   PUT /api/documents/:id/favorite
+// @access  Private
+router.put('/:id/favorite', protect, async (req, res) => {
+  try {
+    const document = await Document.findById(req.params.id);
+
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to modify this document' });
+    }
+
+    const isFavorite = document.favoritedBy.includes(req.user._id);
+    if (isFavorite) {
+      document.favoritedBy = document.favoritedBy.filter(id => id.toString() !== req.user._id.toString());
+    } else {
+      document.favoritedBy.push(req.user._id);
+    }
+
+    await document.save();
+
+    res.json({ message: isFavorite ? 'Removed from Favorites' : 'Added to Favorites', isFavorite: !isFavorite });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

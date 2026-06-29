@@ -32,6 +32,13 @@ const Navbar = () => {
             Dashboard
           </Link>
           
+          <Link
+            to="/favorites"
+            className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
+          >
+            Favorites
+          </Link>
+          
           {user.role === 'admin' && (
             <Link
               to="/admin"

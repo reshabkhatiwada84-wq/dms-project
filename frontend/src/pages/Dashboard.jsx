@@ -9,7 +9,7 @@ import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
 import {
   Download, FileText, Search, Trash2, Upload, AlertCircle,
-  HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch
+  HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch, Star
 } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -144,6 +144,7 @@ const Dashboard = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [confirmConfig, setConfirmConfig] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
 
   // ── Folder state ──────────────────────────────────────────────────────────
   const [folders, setFolders] = useState([]);
@@ -232,6 +233,33 @@ const Dashboard = () => {
     });
   };
 
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 3000);
+  };
+
+  const handleToggleFavorite = async (e, doc) => {
+    e.stopPropagation();
+    try {
+      const res = await axios.put(`/api/documents/${doc._id}/favorite`);
+      const { isFavorite, message } = res.data;
+      
+      showToast(message);
+      
+      // Update local state to reflect the change immediately
+      setDocuments(prevDocs => prevDocs.map(d => 
+        d._id === doc._id 
+          ? { ...d, favoritedBy: isFavorite ? [...d.favoritedBy, user._id] : d.favoritedBy.filter(id => id !== user._id) } 
+          : d
+      ));
+    } catch (err) {
+      console.error('Failed to toggle favorite', err);
+      alert('Failed to update favorite status');
+    }
+  };
+
   const handleDownload = async (id, originalName) => {
     try {
       const response = await axios({ url: `/api/documents/download/${id}`, method: 'GET', responseType: 'blob' });
@@ -290,7 +318,15 @@ const Dashboard = () => {
   const todayUploads = stats?.activity?.[6]?.uploads || 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 animate-in fade-in duration-300">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 animate-in fade-in duration-300 relative">
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl border border-white/10 flex items-center space-x-3 animate-in slide-in-from-bottom-5">
+          <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
+          <span className="font-semibold">{toastMessage}</span>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -619,7 +655,9 @@ const Dashboard = () => {
             </div>
           ) : (
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {documents.map((doc) => (
+              {documents.map((doc) => {
+                const isFavorite = doc.favoritedBy?.includes(user._id);
+                return (
                 <div
                   key={doc._id}
                   onClick={() => { setSelectedPreviewDoc(doc); setIsPreviewOpen(true); }}
@@ -638,6 +676,13 @@ const Dashboard = () => {
                           {doc.originalName?.split('.').pop().toUpperCase() || 'FILE'}
                         </span>
                       </div>
+                      <button 
+                        onClick={(e) => handleToggleFavorite(e, doc)} 
+                        className={`${isFavorite ? 'text-yellow-400' : 'text-slate-400'} hover:text-yellow-400 transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-full border border-white/5`}
+                        title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                      >
+                        <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-400' : ''}`} />
+                      </button>
                     </div>
                     <h4 className="text-base font-bold text-white group-hover:text-sky-400 transition-colors truncate mb-1">{doc.title}</h4>
                     <p className="text-xs text-slate-400 line-clamp-2 mb-2 h-8">{doc.description || 'No description provided.'}</p>
@@ -696,7 +741,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
           </div>{/* end flex-1 */}
