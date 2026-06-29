@@ -21,7 +21,7 @@ const versionSchema = mongoose.Schema(
     },
     filePath: {
       type: String,
-      required: true,
+      required: false, // Not required anymore, for backward compatibility
     },
     mimeType: {
       type: String,

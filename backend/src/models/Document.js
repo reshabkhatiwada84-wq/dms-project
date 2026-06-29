@@ -40,7 +40,7 @@ const documentSchema = mongoose.Schema(
     },
     filePath: {
       type: String,
-      required: true,
+      required: false, // Not required anymore, for backward compatibility
     },
     shareToken: {
       type: String,
