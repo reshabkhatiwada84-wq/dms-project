@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { FolderOpen, LogOut, ShieldAlert, User } from 'lucide-react';
+import { FolderOpen, LogOut, ShieldAlert, User, Star } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
@@ -30,6 +30,14 @@ const Navbar = () => {
             className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
           >
             Dashboard
+          </Link>
+
+          <Link
+            to="/favorites"
+            className="flex items-center space-x-1.5 text-sm font-medium text-slate-300 hover:text-amber-400 transition-colors"
+          >
+            <Star className="h-4 w-4" />
+            <span>Favorites</span>
           </Link>
           
           {user.role === 'admin' && (

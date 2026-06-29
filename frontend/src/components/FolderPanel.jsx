@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Folder, FolderOpen, FolderPlus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { Folder, FolderOpen, FolderPlus, Pencil, Trash2, X, Check, Star } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
 /**
@@ -121,6 +121,15 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
             <span className="truncate">{item.label}</span>
           </button>
         ))}
+
+        {/* Favorites link */}
+        <Link
+          to="/favorites"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-amber-400 hover:bg-amber-500/10"
+        >
+          <Star className="h-4 w-4 flex-shrink-0" />
+          <span className="truncate">Favorites</span>
+        </Link>
 
         {/* Trash link */}
         <Link

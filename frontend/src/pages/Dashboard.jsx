@@ -9,7 +9,7 @@ import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
 import {
   Download, FileText, Search, Trash2, Upload, AlertCircle,
-  HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch
+  HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch, Star
 } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -159,6 +159,17 @@ const Dashboard = () => {
   const [versionDoc, setVersionDoc] = useState(null);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
 
+  // ── Favorites state ───────────────────────────────────────────────────────
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
+
+  // ── Toast state ───────────────────────────────────────────────────────────
+  const [toast, setToast] = useState({ visible: false, message: '' });
+
+  const showToast = (message) => {
+    setToast({ visible: true, message });
+    setTimeout(() => setToast({ visible: false, message: '' }), 2500);
+  };
+
   const categories = ['All', 'Invoice', 'Contract', 'Resume', 'Report', 'Other'];
 
   const fetchStats = useCallback(async () => {
@@ -170,6 +181,15 @@ const Dashboard = () => {
       console.error('Stats fetch error:', err);
     } finally {
       setStatsLoading(false);
+    }
+  }, []);
+
+  const fetchFavoriteIds = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/favorites');
+      setFavoriteIds(new Set(res.data.map((d) => d._id)));
+    } catch (err) {
+      console.error('Favorites fetch error:', err);
     }
   }, []);
 
@@ -202,6 +222,10 @@ const Dashboard = () => {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  useEffect(() => {
+    fetchFavoriteIds();
+  }, [fetchFavoriteIds]);
 
   useEffect(() => {
     fetchFolders();
@@ -251,6 +275,26 @@ const Dashboard = () => {
     e.stopPropagation();
     setMoveDoc(doc);
     setIsMoveOpen(true);
+  };
+
+  const handleToggleFavorite = async (e, docId) => {
+    e.stopPropagation();
+    try {
+      const res = await axios.post(`/api/favorites/${docId}`);
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (res.data.isFavorite) {
+          next.add(docId);
+          showToast('Added to Favorites');
+        } else {
+          next.delete(docId);
+          showToast('Removed from Favorites');
+        }
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+    }
   };
 
   const handleShare = (doc) => {
@@ -681,6 +725,17 @@ const Dashboard = () => {
                       </button>
                     </div>
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => handleToggleFavorite(e, doc._id)}
+                        title={favoriteIds.has(doc._id) ? 'Remove from Favorites' : 'Add to Favorites'}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          favoriteIds.has(doc._id)
+                            ? 'text-amber-400 hover:bg-amber-500/10'
+                            : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
+                        }`}
+                      >
+                        <Star className={`h-4 w-4 ${favoriteIds.has(doc._id) ? 'fill-amber-400' : ''}`} />
+                      </button>
                       <button onClick={(e) => { e.stopPropagation(); setVersionDoc(doc); setIsVersionOpen(true); }}
                         title="Version History" className="p-1.5 rounded-lg text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 transition-colors">
                         <History className="h-4 w-4" />
@@ -830,6 +885,16 @@ const Dashboard = () => {
         document={versionDoc}
         onVersionChange={() => { fetchDocuments(); fetchStats(); }}
       />
+
+      {/* ── Toast Notification ── */}
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-slate-800 border border-white/10 shadow-2xl text-sm font-semibold text-white transition-all duration-300 ${
+          toast.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}
+      >
+        <Star className={`h-4 w-4 ${toast.message.includes('Added') ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
+        {toast.message}
+      </div>
     </div>
   );
 };

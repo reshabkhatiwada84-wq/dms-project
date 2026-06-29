@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import TrashView from './pages/TrashView';
 import SharedDocumentView from './pages/SharedDocumentView';
+import FavoritesPage from './pages/FavoritesPage';
 
 function App() {
   // Small comment to trigger new Netlify build
@@ -40,6 +41,16 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <TrashView />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Favorites Route */}
+              <Route
+                path="/favorites"
+                element={
+                  <ProtectedRoute>
+                    <FavoritesPage />
                   </ProtectedRoute>
                 }
               />

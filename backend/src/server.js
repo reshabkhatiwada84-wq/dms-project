@@ -41,6 +41,7 @@ app.use('/api/folders', require('./routes/folders'));
 app.use('/api/versions', require('./routes/versions'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/trash', require('./routes/trash'));
+app.use('/api/favorites', require('./routes/favorites'));
 
 // Start daily cleanup scheduler for expired versions
 startCleanupScheduler();
