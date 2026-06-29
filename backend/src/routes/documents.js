@@ -56,7 +56,7 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       size: req.file.size,
       category,
       uploadedBy: req.user._id,
-      filePath: req.file.path,
+      // Remove filePath or keep it, but we'll use filename
     });
 
     // Auto-create v1 Version record so the original file is always tracked
@@ -72,7 +72,6 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       versionNumber: 1,
       filename: req.file.filename,
       originalName: req.file.originalname,
-      filePath: req.file.path,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
       uploadedBy: req.user._id,
@@ -235,11 +234,22 @@ router.get('/download/:id', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to download this document' });
     }
 
-    if (!fs.existsSync(document.filePath)) {
+    // Try filename first, fall back to filePath for backward compatibility
+    let fullPath = null;
+    if (document.filename) {
+      fullPath = path.join(uploadDir, document.filename);
+    }
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      if (document.filePath) {
+        fullPath = document.filePath;
+      }
+    }
+
+    if (!fullPath || !fs.existsSync(fullPath)) {
       return res.status(404).json({ message: 'Physical file not found on server' });
     }
 
-    res.download(document.filePath, document.originalName, { dotfiles: 'allow' }, (err) => {
+    res.download(fullPath, document.originalName, { dotfiles: 'allow' }, (err) => {
       if (err && !res.headersSent) {
         res.status(500).json({ message: 'Error downloading file' });
       }
@@ -350,11 +360,22 @@ router.get('/public/:shareToken', async (req, res) => {
       return res.status(404).json({ message: 'Invalid or expired share link' });
     }
 
-    if (!fs.existsSync(document.filePath)) {
+    // Try filename first, fall back to filePath for backward compatibility
+    let fullPath = null;
+    if (document.filename) {
+      fullPath = path.join(uploadDir, document.filename);
+    }
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      if (document.filePath) {
+        fullPath = document.filePath;
+      }
+    }
+
+    if (!fullPath || !fs.existsSync(fullPath)) {
       return res.status(404).json({ message: 'Physical file not found on server' });
     }
 
-    res.download(document.filePath, document.originalName, { dotfiles: 'allow' }, (err) => {
+    res.download(fullPath, document.originalName, { dotfiles: 'allow' }, (err) => {
       if (err && !res.headersSent) {
         res.status(500).json({ message: 'Error downloading file' });
       }
@@ -407,7 +428,6 @@ router.post('/public/:shareToken/upload', upload.single('file'), async (req, res
       versionNumber: versionCount + 1,
       filename: req.file.filename,
       originalName: req.file.originalname,
-      filePath: req.file.path,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
       uploadedBy: document.uploadedBy, // Attribute to the original owner
@@ -421,7 +441,6 @@ router.post('/public/:shareToken/upload', upload.single('file'), async (req, res
     document.originalName = req.file.originalname;
     document.mimeType = req.file.mimetype;
     document.size = req.file.size;
-    document.filePath = req.file.path;
     await document.save();
 
     res.status(200).json({ message: 'New version uploaded successfully' });

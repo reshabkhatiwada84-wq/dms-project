@@ -111,7 +111,6 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
       versionNumber: nextVersionNumber,
       filename: req.file.filename,
       originalName: req.file.originalname,
-      filePath: req.file.path,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
       uploadedBy: req.user._id,
@@ -127,7 +126,6 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     doc.originalName = req.file.originalname;
     doc.mimeType = req.file.mimetype;
     doc.size = req.file.size;
-    doc.filePath = req.file.path;
     await doc.save();
 
     const populated = await Version.findById(newVersion._id).populate('uploadedBy', 'name email');
@@ -151,11 +149,22 @@ router.get('/:documentId/download/:versionId', protect, async (req, res) => {
     const version = await Version.findOne({ _id: req.params.versionId, documentId: req.params.documentId });
     if (!version) return res.status(404).json({ message: 'Version not found' });
 
-    if (!fs.existsSync(version.filePath)) {
+    // Try filename first, fall back to filePath for backward compatibility
+    let fullPath = null;
+    if (version.filename) {
+      fullPath = path.join(uploadDir, version.filename);
+    }
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      if (version.filePath) {
+        fullPath = version.filePath;
+      }
+    }
+
+    if (!fullPath || !fs.existsSync(fullPath)) {
       return res.status(404).json({ message: 'Physical file not found on server' });
     }
 
-    res.download(version.filePath, version.originalName, { dotfiles: 'allow' }, (err) => {
+    res.download(fullPath, version.originalName, { dotfiles: 'allow' }, (err) => {
       if (err && !res.headersSent) res.status(500).json({ message: 'Error downloading file' });
     });
   } catch (error) {
@@ -176,7 +185,18 @@ router.post('/:documentId/restore/:versionId', protect, async (req, res) => {
     const targetVersion = await Version.findOne({ _id: req.params.versionId, documentId: req.params.documentId });
     if (!targetVersion) return res.status(404).json({ message: 'Version not found' });
 
-    if (!fs.existsSync(targetVersion.filePath)) {
+    // Try filename first, fall back to filePath for backward compatibility
+    let fullPath = null;
+    if (targetVersion.filename) {
+      fullPath = path.join(uploadDir, targetVersion.filename);
+    }
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      if (targetVersion.filePath) {
+        fullPath = targetVersion.filePath;
+      }
+    }
+
+    if (!fullPath || !fs.existsSync(fullPath)) {
       return res.status(404).json({ message: 'Physical file for this version is no longer available' });
     }
 
@@ -200,7 +220,6 @@ router.post('/:documentId/restore/:versionId', protect, async (req, res) => {
     doc.originalName = targetVersion.originalName;
     doc.mimeType = targetVersion.mimeType;
     doc.size = targetVersion.fileSize;
-    doc.filePath = targetVersion.filePath;
     await doc.save();
 
     const populated = await Version.findById(targetVersion._id).populate('uploadedBy', 'name email');
@@ -246,7 +265,6 @@ router.delete('/:documentId/:versionId', protect, async (req, res) => {
         doc.originalName = nextCurrent.originalName;
         doc.mimeType = nextCurrent.mimeType;
         doc.size = nextCurrent.fileSize;
-        doc.filePath = nextCurrent.filePath;
         await doc.save();
       }
     }
