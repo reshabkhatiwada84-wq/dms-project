@@ -1,7 +1,11 @@
 const cloudinary = require('cloudinary').v2;
 const streamifier = require('streamifier');
+require('dotenv').config(); // Ensure dotenv is loaded here just in case
 
-// Configuration is automatically picked up from process.env.CLOUDINARY_URL
+// Cloudinary automatically picks up process.env.CLOUDINARY_URL
+if (process.env.CLOUDINARY_URL) {
+  cloudinary.config(true);
+}
 
 /**
  * Uploads a file buffer to Cloudinary using a stream.

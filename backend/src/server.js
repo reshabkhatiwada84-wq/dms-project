@@ -1,12 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+// Load env vars before anything else
+dotenv.config();
+
 const path = require('path');
 const connectDB = require('./config/db');
 const { startCleanupScheduler } = require('./cleanup');
-
-// Load env vars
-dotenv.config();
 
 // Connect to database
 connectDB();
