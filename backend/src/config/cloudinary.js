@@ -1,10 +1,34 @@
 const cloudinary = require('cloudinary').v2;
 const streamifier = require('streamifier');
-require('dotenv').config(); // Ensure dotenv is loaded here just in case
+require('dotenv').config();
 
-// Cloudinary automatically picks up process.env.CLOUDINARY_URL
-if (process.env.CLOUDINARY_URL) {
-  cloudinary.config(true);
+// Parse CLOUDINARY_URL manually for maximum compatibility
+// Format: cloudinary://api_key:api_secret@cloud_name
+const cloudinaryUrl = process.env.CLOUDINARY_URL;
+if (cloudinaryUrl) {
+  try {
+    const url = new URL(cloudinaryUrl);
+    cloudinary.config({
+      cloud_name: url.host,
+      api_key: url.username,
+      api_secret: decodeURIComponent(url.password),
+      secure: true,
+    });
+    console.log('[Cloudinary] Configured via URL with cloud_name:', url.host);
+  } catch (e) {
+    console.error('[Cloudinary] Failed to parse CLOUDINARY_URL:', e.message);
+  }
+} else if (process.env.CLOUDINARY_CLOUD_NAME) {
+  // Fallback: use individual env vars
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+  console.log('[Cloudinary] Configured via individual env vars, cloud_name:', process.env.CLOUDINARY_CLOUD_NAME);
+} else {
+  console.warn('[Cloudinary] No Cloudinary credentials found!');
 }
 
 /**
@@ -24,6 +48,7 @@ const uploadToCloudinary = (buffer, originalName) => {
       },
       (error, result) => {
         if (error) {
+          console.error('[Cloudinary] Upload error:', error);
           reject(error);
         } else {
           resolve(result);
