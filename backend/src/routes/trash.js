@@ -4,6 +4,10 @@ const fs = require('fs');
 const Document = require('../models/Document');
 const Version = require('../models/Version');
 const { protect, admin } = require('../middleware/auth');
+const { cloudinary } = require('../config/cloudinary');
+const path = require('path');
+
+const uploadDir = path.join(__dirname, '../../uploads');
 
 // ─── All trash routes require authentication ────────────────────────────────
 router.use(protect);
@@ -134,12 +138,24 @@ router.delete('/documents/:id', async (req, res) => {
     // Permanently delete all associated version files and records
     const versions = await Version.find({ documentId: doc._id });
     for (const version of versions) {
-      if (fs.existsSync(version.filePath)) fs.unlinkSync(version.filePath);
+      if (version.cloudinaryId) {
+        await cloudinary.uploader.destroy(version.cloudinaryId, { resource_type: 'raw' });
+      } else {
+        const fullPath = version.filename ? path.join(uploadDir, version.filename) : version.filePath;
+        if (fullPath && fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+      }
       await Version.findByIdAndDelete(version._id);
     }
 
     // Delete the document physical file
-    if (fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath);
+    if (doc.cloudinaryId) {
+      // Often the main document's file is just a reference to a version's file,
+      // but if it has its own independent Cloudinary ID, destroy it.
+      await cloudinary.uploader.destroy(doc.cloudinaryId, { resource_type: 'raw' });
+    } else {
+      const fullPath = doc.filename ? path.join(uploadDir, doc.filename) : doc.filePath;
+      if (fullPath && fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
 
     // Delete the document record
     await Document.findByIdAndDelete(doc._id);
@@ -162,7 +178,12 @@ router.delete('/versions/:id', async (req, res) => {
     }
 
     // Delete the physical file
-    if (fs.existsSync(version.filePath)) fs.unlinkSync(version.filePath);
+    if (version.cloudinaryId) {
+      await cloudinary.uploader.destroy(version.cloudinaryId, { resource_type: 'raw' });
+    } else {
+      const fullPath = version.filename ? path.join(uploadDir, version.filename) : version.filePath;
+      if (fullPath && fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
 
     // Delete the version record
     await Version.findByIdAndDelete(version._id);

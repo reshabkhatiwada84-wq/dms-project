@@ -8,21 +8,12 @@ const Version = require('../models/Version');
 const Document = require('../models/Document');
 const { protect, admin } = require('../middleware/auth');
 
+const { uploadToCloudinary } = require('../config/cloudinary');
+const https = require('https');
+
 const EXPIRY_DAYS = 7;
 
-// Upload directory (shared with documents)
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'ver-' + uniqueSuffix + path.extname(file.originalname));
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -60,12 +51,10 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
   try {
     const doc = await Document.findById(req.params.documentId);
     if (!doc) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(404).json({ message: 'Document not found' });
     }
 
     if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(403).json({ message: 'Not authorized to upload a version of this document' });
     }
 
@@ -74,21 +63,26 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     // ── SHA-256 hash generation for duplicate detection ───────────────────
     let fileHash;
     try {
-      const fileBuffer = fs.readFileSync(req.file.path);
-      fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
     } catch (hashErr) {
-      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(500).json({ message: 'Failed to generate file hash. Upload cancelled.' });
     }
 
     // Compare with the latest version's hash to detect duplicates
     const currentVersion = await Version.findOne({ documentId: doc._id, isCurrentVersion: true });
     if (currentVersion && currentVersion.fileHash && currentVersion.fileHash === fileHash) {
-      // Identical file — reject and clean up
-      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      // Identical file — reject
       return res.status(409).json({
         message: 'No changes detected. This file is identical to the latest version.',
       });
+    }
+
+    // Upload to Cloudinary
+    let cloudResult;
+    try {
+      cloudResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+    } catch (uploadErr) {
+      return res.status(500).json({ message: 'Failed to upload version to cloud storage' });
     }
 
     // Get existing non-deleted versions sorted ascending
@@ -109,7 +103,7 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     const newVersion = await Version.create({
       documentId: doc._id,
       versionNumber: nextVersionNumber,
-      filename: req.file.filename,
+      filename: cloudResult.public_id,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
@@ -118,20 +112,23 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
       expiryDate: null,
       isCurrentVersion: true,
       fileHash,
+      cloudinaryId: cloudResult.public_id,
+      cloudinaryUrl: cloudResult.secure_url,
       actionLog: [{ action: 'uploaded', performedBy: req.user._id }],
     });
 
     // Update the main Document record to reflect the latest version file
-    doc.filename = req.file.filename;
+    doc.filename = cloudResult.public_id;
     doc.originalName = req.file.originalname;
     doc.mimeType = req.file.mimetype;
     doc.size = req.file.size;
+    doc.cloudinaryId = cloudResult.public_id;
+    doc.cloudinaryUrl = cloudResult.secure_url;
     await doc.save();
 
     const populated = await Version.findById(newVersion._id).populate('uploadedBy', 'name email');
     res.status(201).json(populated);
   } catch (error) {
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ message: error.message });
   }
 });
@@ -149,8 +146,21 @@ router.get('/:documentId/download/:versionId', protect, async (req, res) => {
     const version = await Version.findOne({ _id: req.params.versionId, documentId: req.params.documentId });
     if (!version) return res.status(404).json({ message: 'Version not found' });
 
+    if (version.cloudinaryUrl) {
+      // Stream from Cloudinary
+      https.get(version.cloudinaryUrl, (cloudinaryRes) => {
+        res.setHeader('Content-Type', version.mimeType);
+        res.setHeader('Content-Disposition', `attachment; filename="${version.originalName}"`);
+        cloudinaryRes.pipe(res);
+      }).on('error', (e) => {
+        res.status(500).json({ message: 'Error streaming file from cloud storage' });
+      });
+      return;
+    }
+
     // Try filename first, fall back to filePath for backward compatibility
     let fullPath = null;
+    const uploadDir = path.join(__dirname, '../../uploads');
     if (version.filename) {
       fullPath = path.join(uploadDir, version.filename);
     }
@@ -220,6 +230,10 @@ router.post('/:documentId/restore/:versionId', protect, async (req, res) => {
     doc.originalName = targetVersion.originalName;
     doc.mimeType = targetVersion.mimeType;
     doc.size = targetVersion.fileSize;
+    if (targetVersion.cloudinaryId) {
+      doc.cloudinaryId = targetVersion.cloudinaryId;
+      doc.cloudinaryUrl = targetVersion.cloudinaryUrl;
+    }
     await doc.save();
 
     const populated = await Version.findById(targetVersion._id).populate('uploadedBy', 'name email');
@@ -265,6 +279,10 @@ router.delete('/:documentId/:versionId', protect, async (req, res) => {
         doc.originalName = nextCurrent.originalName;
         doc.mimeType = nextCurrent.mimeType;
         doc.size = nextCurrent.fileSize;
+        if (nextCurrent.cloudinaryId) {
+          doc.cloudinaryId = nextCurrent.cloudinaryId;
+          doc.cloudinaryUrl = nextCurrent.cloudinaryUrl;
+        }
         await doc.save();
       }
     }

@@ -2,6 +2,10 @@ const cron = require('node-cron');
 const fs = require('fs');
 const Version = require('./models/Version');
 const Document = require('./models/Document');
+const { cloudinary } = require('./config/cloudinary');
+const path = require('path');
+
+const uploadDir = path.join(__dirname, '../uploads');
 
 const TRASH_RETENTION_DAYS = 15;
 let cleanupStats = { totalDeleted: 0, totalTrashPurged: 0, lastRun: null };
@@ -26,8 +30,11 @@ const startCleanupScheduler = () => {
       let deleted = 0;
       for (const version of expired) {
         try {
-          if (fs.existsSync(version.filePath)) {
-            fs.unlinkSync(version.filePath);
+          if (version.cloudinaryId) {
+            await cloudinary.uploader.destroy(version.cloudinaryId, { resource_type: 'raw' });
+          } else {
+            const fullPath = version.filename ? path.join(uploadDir, version.filename) : version.filePath;
+            if (fullPath && fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
           }
           await Version.findByIdAndDelete(version._id);
           deleted++;
@@ -73,15 +80,25 @@ const runTrashPurge = async () => {
         // Delete all associated versions' physical files and records
         const versions = await Version.find({ documentId: doc._id });
         for (const version of versions) {
-          if (fs.existsSync(version.filePath)) {
-            try { fs.unlinkSync(version.filePath); } catch (e) { /* ignore */ }
+          if (version.cloudinaryId) {
+            try { await cloudinary.uploader.destroy(version.cloudinaryId, { resource_type: 'raw' }); } catch (e) { /* ignore */ }
+          } else {
+            const fullPath = version.filename ? path.join(uploadDir, version.filename) : version.filePath;
+            if (fullPath && fs.existsSync(fullPath)) {
+              try { fs.unlinkSync(fullPath); } catch (e) { /* ignore */ }
+            }
           }
           await Version.findByIdAndDelete(version._id);
           purgedVersions++;
         }
         // Delete the document's physical file
-        if (fs.existsSync(doc.filePath)) {
-          try { fs.unlinkSync(doc.filePath); } catch (e) { /* ignore */ }
+        if (doc.cloudinaryId) {
+          try { await cloudinary.uploader.destroy(doc.cloudinaryId, { resource_type: 'raw' }); } catch (e) { /* ignore */ }
+        } else {
+          const fullPath = doc.filename ? path.join(uploadDir, doc.filename) : doc.filePath;
+          if (fullPath && fs.existsSync(fullPath)) {
+            try { fs.unlinkSync(fullPath); } catch (e) { /* ignore */ }
+          }
         }
         // Delete the document record
         await Document.findByIdAndDelete(doc._id);
@@ -99,8 +116,13 @@ const runTrashPurge = async () => {
 
     for (const version of expiredVersions) {
       try {
-        if (fs.existsSync(version.filePath)) {
-          try { fs.unlinkSync(version.filePath); } catch (e) { /* ignore */ }
+        if (version.cloudinaryId) {
+          try { await cloudinary.uploader.destroy(version.cloudinaryId, { resource_type: 'raw' }); } catch (e) { /* ignore */ }
+        } else {
+          const fullPath = version.filename ? path.join(uploadDir, version.filename) : version.filePath;
+          if (fullPath && fs.existsSync(fullPath)) {
+            try { fs.unlinkSync(fullPath); } catch (e) { /* ignore */ }
+          }
         }
         await Version.findByIdAndDelete(version._id);
         purgedVersions++;

@@ -42,6 +42,14 @@ const documentSchema = mongoose.Schema(
       type: String,
       required: false, // Not required anymore, for backward compatibility
     },
+    cloudinaryId: {
+      type: String,
+      required: false,
+    },
+    cloudinaryUrl: {
+      type: String,
+      required: false,
+    },
     shareToken: {
       type: String,
       unique: true,
