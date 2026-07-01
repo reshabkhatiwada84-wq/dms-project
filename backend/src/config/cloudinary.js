@@ -72,7 +72,7 @@ const uploadProfileImage = (buffer) => {
         resource_type: 'image',
         folder: 'dms_profile_photos',
         transformation: [
-          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { width: 400, height: 400, crop: 'fill', gravity: 'auto' },
           { quality: 'auto', fetch_format: 'auto' },
         ],
       },

@@ -39,9 +39,7 @@ const Profile = () => {
       const formData = new FormData();
       formData.append('profilePhoto', file);
 
-      const res = await axios.put('/api/auth/profile-photo', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await axios.put('/api/auth/profile-photo', formData);
 
       updateUser({ profilePhoto: res.data.profilePhoto });
       showToast('Profile photo updated successfully');
