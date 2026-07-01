@@ -49,14 +49,30 @@ const Navbar = () => {
             </Link>
           )}
 
-          {/* User Info Pill */}
-          <div className="flex items-center space-x-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-sm">
-            <User className="h-4 w-4 text-sky-400" />
+          {/* User Info Pill — links to Profile page */}
+          <Link
+            to="/profile"
+            className="flex items-center space-x-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors"
+          >
+            {/* Profile Photo Avatar */}
+            <div className="h-6 w-6 rounded-full overflow-hidden border border-sky-500/40 flex-shrink-0">
+              {user.profilePhoto?.url ? (
+                <img
+                  src={user.profilePhoto.url}
+                  alt={user.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-gradient-to-br from-sky-500/30 to-purple-500/30 flex items-center justify-center">
+                  <User className="h-3.5 w-3.5 text-sky-400" />
+                </div>
+              )}
+            </div>
             <span className="font-semibold text-slate-200">{user.name}</span>
             <span className="text-xs text-slate-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5 uppercase">
               {user.email === 'rishabh@gmail.com' ? 'Super Admin' : user.role}
             </span>
-          </div>
+          </Link>
 
           {/* Logout */}
           <button

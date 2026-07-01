@@ -28,6 +28,16 @@ const userSchema = mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    profilePhoto: {
+      url: {
+        type: String,
+        default: null,
+      },
+      publicId: {
+        type: String,
+        default: null,
+      },
+    },
     favorites: [
       {
         type: mongoose.Schema.Types.ObjectId,

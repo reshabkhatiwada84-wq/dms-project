@@ -59,7 +59,38 @@ const uploadToCloudinary = (buffer, originalName) => {
   });
 };
 
+/**
+ * Uploads a profile image buffer to Cloudinary.
+ * Uses resource_type 'image' and a separate folder.
+ * @param {Buffer} buffer - The image buffer to upload.
+ * @returns {Promise<Object>} - The Cloudinary upload result.
+ */
+const uploadProfileImage = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'image',
+        folder: 'dms_profile_photos',
+        transformation: [
+          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { quality: 'auto', fetch_format: 'auto' },
+        ],
+      },
+      (error, result) => {
+        if (error) {
+          console.error('[Cloudinary] Profile image upload error:', error);
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+};
+
 module.exports = {
   cloudinary,
-  uploadToCloudinary
+  uploadToCloudinary,
+  uploadProfileImage
 };

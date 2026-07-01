@@ -143,12 +143,12 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
-
-    delete axios.defaults.headers.common[
-      'Authorization'
-    ];
-
+    delete axios.defaults.headers.common['Authorization'];
     setUser(null);
+  };
+
+  const updateUser = (updatedFields) => {
+    setUser((prev) => (prev ? { ...prev, ...updatedFields } : prev));
   };
 
   return (
@@ -159,6 +159,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        updateUser,
       }}
     >
       {children}

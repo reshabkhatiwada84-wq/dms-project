@@ -1,8 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
+const { cloudinary, uploadProfileImage } = require('../config/cloudinary');
+
+// Multer memory storage for profile photo uploads
+const profileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  },
+});
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'jwtsecretkey123', {
@@ -39,6 +54,7 @@ router.post('/register', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        profilePhoto: user.profilePhoto || { url: null, publicId: null },
         token: generateToken(user._id),
       });
     } else {
@@ -65,6 +81,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        profilePhoto: user.profilePhoto || { url: null, publicId: null },
         token: generateToken(user._id),
       });
     } else {
@@ -150,6 +167,72 @@ router.post('/reset-password', async (req, res) => {
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   res.json(req.user);
+});
+
+// @desc    Upload or replace profile photo
+// @route   PUT /api/auth/profile-photo
+// @access  Private
+router.put('/profile-photo', protect, profileUpload.single('profilePhoto'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Delete old photo from Cloudinary if one exists
+    if (user.profilePhoto && user.profilePhoto.publicId) {
+      try {
+        await cloudinary.uploader.destroy(user.profilePhoto.publicId, { resource_type: 'image' });
+      } catch (e) {
+        console.error('[ProfilePhoto] Failed to delete old photo:', e.message);
+      }
+    }
+
+    // Upload new photo
+    const result = await uploadProfileImage(req.file.buffer);
+
+    user.profilePhoto = {
+      url: result.secure_url,
+      publicId: result.public_id,
+    };
+    await user.save();
+
+    res.json({
+      message: 'Profile photo updated successfully',
+      profilePhoto: user.profilePhoto,
+    });
+  } catch (error) {
+    console.error('[ProfilePhoto] Upload error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Remove profile photo
+// @route   DELETE /api/auth/profile-photo
+// @access  Private
+router.delete('/profile-photo', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Delete from Cloudinary
+    if (user.profilePhoto && user.profilePhoto.publicId) {
+      try {
+        await cloudinary.uploader.destroy(user.profilePhoto.publicId, { resource_type: 'image' });
+      } catch (e) {
+        console.error('[ProfilePhoto] Failed to delete from Cloudinary:', e.message);
+      }
+    }
+
+    user.profilePhoto = { url: null, publicId: null };
+    await user.save();
+
+    res.json({ message: 'Profile photo removed successfully', profilePhoto: user.profilePhoto });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 module.exports = router;
