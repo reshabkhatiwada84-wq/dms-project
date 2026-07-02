@@ -3,17 +3,13 @@ import axios from 'axios';
 
 export const AuthContext = createContext();
 
-// Set API base URL
-const API_URL = import.meta.env.VITE_API_URL;
+// Set API base URL with smart fallbacks if Netlify env variable is missing
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : 'https://dms-project-tzvd.onrender.com');
 console.log('🔧 Full environment variables available:', import.meta.env);
-console.log('🔧 API_URL from env:', API_URL);
+console.log('🔧 API_URL from env or fallback:', API_URL);
 
-if (API_URL) {
-  axios.defaults.baseURL = API_URL;
-  console.log('✅ Axios baseURL set to:', axios.defaults.baseURL);
-} else {
-  console.error('❌ NO VITE_API_URL FOUND! Requests will fail!');
-}
+axios.defaults.baseURL = API_URL;
+console.log('✅ Axios baseURL set to:', axios.defaults.baseURL);
 
 // Add an axios interceptor to log every request
 axios.interceptors.request.use(
