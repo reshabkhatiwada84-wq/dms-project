@@ -179,7 +179,7 @@ router.get('/', protect, async (req, res) => {
     
     let query = { isDeleted: { $ne: true } };
     
-    if (req.user.role !== 'admin') {
+    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -217,8 +217,57 @@ router.get('/', protect, async (req, res) => {
 });
 
 // @desc    Download a document
+// @desc    Preview a document inline in the browser
+// @route   GET /api/documents/preview/:id
+// @access  Private
+router.get('/preview/:id', protect, async (req, res) => {
+  try {
+    const document = await Document.findById(req.params.id);
+
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (document.cloudinaryUrl) {
+      // Stream from Cloudinary with inline Content-Disposition
+      https.get(document.cloudinaryUrl, (cloudinaryRes) => {
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        cloudinaryRes.pipe(res);
+      }).on('error', (e) => {
+        res.status(500).json({ message: 'Error streaming file from cloud storage' });
+      });
+      return;
+    }
+
+    // Local file fallback
+    let fullPath = null;
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (document.filename) fullPath = path.join(uploadDir, document.filename);
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      if (document.filePath) fullPath = document.filePath;
+    }
+    if (!fullPath || !fs.existsSync(fullPath)) {
+      return res.status(404).json({ message: 'Physical file not found on server' });
+    }
+
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+    fs.createReadStream(fullPath).pipe(res);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Download a document
 // @route   GET /api/documents/download/:id
 // @access  Private
+
 router.get('/download/:id', protect, async (req, res) => {
   try {
     const document = await Document.findById(req.params.id);
@@ -521,11 +570,7 @@ router.put('/:id/favorite', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized to modify this document' });
-    }
-
-    const isFavorite = document.favoritedBy.includes(req.user._id);
+    const isFavorite = document.favoritedBy.some(id => id.toString() === req.user._id.toString());
     if (isFavorite) {
       document.favoritedBy = document.favoritedBy.filter(id => id.toString() !== req.user._id.toString());
     } else {
@@ -535,6 +580,25 @@ router.put('/:id/favorite', protect, async (req, res) => {
     await document.save();
 
     res.json({ message: isFavorite ? 'Removed from Favorites' : 'Added to Favorites', isFavorite: !isFavorite });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Get user's favorite documents
+// @route   GET /api/documents/favorites
+// @access  Private
+router.get('/favorites', protect, async (req, res) => {
+  try {
+    const documents = await Document.find({
+      favoritedBy: req.user._id,
+      isDeleted: { $ne: true }
+    })
+      .populate('uploadedBy', 'name email')
+      .populate('folder', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json(documents);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
