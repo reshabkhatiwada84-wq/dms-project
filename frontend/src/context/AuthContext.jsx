@@ -8,7 +8,7 @@ export let API_URL = import.meta.env.VITE_API_URL;
 
 // If the variable is missing or invalid (like a single slash "/"), force the correct URL
 if (!API_URL || !API_URL.startsWith('http')) {
-  API_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://dms-project-tzvd.onrender.com';
+  API_URL = import.meta.env.DEV ? '' : 'https://dms-project-tzvd.onrender.com';
 }
 console.log('🔧 API_URL from env or fallback:', API_URL);
 

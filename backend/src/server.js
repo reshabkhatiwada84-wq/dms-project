@@ -41,6 +41,7 @@ app.use(express.urlencoded({ extended: true }));
 // Notes:
 // - Netlify frontend origin in your logs: https://dmsproject-rishab.netlify.app
 // - Also allow the Render domain (useful for redirects / same-site setups).
+const isDevelopment = process.env.NODE_ENV !== 'production';
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETLIFY_URL,
@@ -50,6 +51,11 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow any origin in development (for local network access)
+    if (isDevelopment) {
+      return callback(null, true);
+    }
+
     // Allow all localhost origins (any port) for development
     if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:')) {
       return callback(null, true);
@@ -70,6 +76,9 @@ app.use(cors({
 // Explicit preflight handler (some hosts/proxies require this)
 app.options('*', cors({
   origin: (origin, callback) => {
+    if (isDevelopment) {
+      return callback(null, true);
+    }
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     if (origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:')) return callback(null, true);
