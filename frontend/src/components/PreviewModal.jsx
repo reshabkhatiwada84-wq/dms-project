@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api, API_URL } from '../context/AuthContext';
 import { X, Download, FileText, AlertCircle } from 'lucide-react';
 
 const DocxRenderer = ({ blob, onError }) => {
@@ -47,21 +47,32 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
         const isPdf = document.mimeType === 'application/pdf';
         const isDocx = document.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+        if (isPdf) {
+          // For PDF: use the preview endpoint URL directly in the iframe
+          // We append the token as a query param so the backend can authorize it
+          const token = localStorage.getItem('token');
+          setPreviewUrl(`${API_URL}/api/documents/preview/${document._id}?token=${token}`);
+          setLoading(false);
+          return;
+        }
+
         if (isText) {
-          const res = await axios.get(`/api/documents/download/${document._id}`, {
+          const res = await api.get(`/api/documents/download/${document._id}`, {
             responseType: 'text',
           });
           setTextContent(res.data);
-        } else if (isImage || isPdf || isDocx) {
-          const res = await axios.get(`/api/documents/download/${document._id}`, {
+        } else if (isImage) {
+          const res = await api.get(`/api/documents/preview/${document._id}`, {
             responseType: 'blob',
           });
-          if (isDocx) {
-            setDocxBlob(res.data);
-          } else {
-            const url = URL.createObjectURL(res.data);
-            setPreviewUrl(url);
-          }
+          const blob = new Blob([res.data], { type: document.mimeType });
+          const url = URL.createObjectURL(blob);
+          setPreviewUrl(url);
+        } else if (isDocx) {
+          const res = await api.get(`/api/documents/download/${document._id}`, {
+            responseType: 'blob',
+          });
+          setDocxBlob(res.data);
         }
       } catch (err) {
         console.error(err);
@@ -74,17 +85,18 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
     loadPreview();
 
     return () => {
-      if (previewUrl) {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(previewUrl);
       }
     };
   }, [isOpen, document]);
 
+
   if (!isOpen || !document) return null;
 
   const handleDownload = async () => {
     try {
-      const response = await axios({
+      const response = await api({
         url: `/api/documents/download/${document._id}`,
         method: 'GET',
         responseType: 'blob',

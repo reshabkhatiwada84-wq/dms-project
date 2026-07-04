@@ -3,6 +3,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { FolderOpen, LogOut, ShieldAlert, User } from 'lucide-react';
 
+const getRoleDisplay = (role) => {
+  switch (role) {
+    case 'superadmin':
+      return 'Super Admin';
+    case 'admin':
+      return 'Admin';
+    case 'user':
+      return 'User';
+    default:
+      return role;
+  }
+};
+
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -39,7 +52,7 @@ const Navbar = () => {
             Favorites
           </Link>
           
-          {user.role === 'admin' && (
+          {(user.role === 'admin' || user.role === 'superadmin') && (
             <Link
               to="/admin"
               className="flex items-center space-x-1.5 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20"
@@ -70,7 +83,7 @@ const Navbar = () => {
             </div>
             <span className="font-semibold text-slate-200">{user.name}</span>
             <span className="text-xs text-slate-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5 uppercase">
-              {user.email === 'rishabh@gmail.com' ? 'Super Admin' : user.role}
+              {getRoleDisplay(user.role)}
             </span>
           </Link>
 

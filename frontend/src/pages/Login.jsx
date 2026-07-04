@@ -1,7 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
-import axios from 'axios';
+import { AuthContext, api } from '../context/AuthContext';
 import { FolderOpen, Lock, Mail, KeyRound, X, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const Login = () => {
@@ -70,7 +69,7 @@ const Login = () => {
     setForgotMessage('');
     setForgotLoading(true);
     try {
-      const res = await axios.post('/api/auth/forgot-password', { email: forgotEmail });
+      const res = await api.post('/api/auth/forgot-password', { email: forgotEmail });
       if (res.data.resetToken) {
         setForgotToken(res.data.resetToken);
         setForgotMessage('Reset token generated. Copy it below (valid for 15 minutes).');
@@ -105,7 +104,7 @@ const Login = () => {
 
     setForgotLoading(true);
     try {
-      const res = await axios.post('/api/auth/reset-password', {
+      const res = await api.post('/api/auth/reset-password', {
         email: forgotEmail,
         token: forgotToken.trim(),
         newPassword: forgotNewPassword,

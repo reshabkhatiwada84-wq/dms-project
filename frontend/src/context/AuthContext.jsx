@@ -1,10 +1,10 @@
-import React, { createContext, useState, useEffect } from 'react';
+import { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
 export const AuthContext = createContext();
 
 // Set API base URL with extremely strict fallbacks
-let API_URL = import.meta.env.VITE_API_URL;
+export let API_URL = import.meta.env.VITE_API_URL;
 
 // If the variable is missing or invalid (like a single slash "/"), force the correct URL
 if (!API_URL || !API_URL.startsWith('http')) {
@@ -12,23 +12,22 @@ if (!API_URL || !API_URL.startsWith('http')) {
 }
 console.log('🔧 API_URL from env or fallback:', API_URL);
 
-axios.defaults.baseURL = API_URL;
-console.log('✅ Axios baseURL set to:', axios.defaults.baseURL);
+// Use a dedicated axios instance with an explicit baseURL.
+// This prevents accidental requests to the Netlify origin like `/api/...` relative calls.
+export const api = axios.create({ baseURL: API_URL });
 
 // Add an axios interceptor to log every request
-axios.interceptors.request.use(
+api.interceptors.request.use(
   (config) => {
     console.log('🚀 Sending request to:', config.baseURL + config.url);
     console.log('Request config:', config);
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Add an interceptor for responses too
-axios.interceptors.response.use(
+api.interceptors.response.use(
   (response) => {
     console.log('✅ Response received:', response);
     return response;
@@ -51,19 +50,18 @@ export const AuthProvider = ({ children }) => {
         const token = localStorage.getItem('token');
 
         if (token) {
-          axios.defaults.headers.common[
-            'Authorization'
-          ] = `Bearer ${token}`;
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-          const res = await axios.get('/api/auth/me');
+          const res = await api.get('/api/auth/me');
           setUser(res.data);
         }
       } catch (err) {
         console.error('Session expired or invalid token', err);
 
         localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
+        delete api.defaults.headers.common['Authorization'];
         setUser(null);
+
       } finally {
         setLoading(false);
       }
@@ -74,17 +72,16 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const res = await axios.post('/api/auth/login', {
+      const res = await api.post('/api/auth/login', {
         email,
         password,
       });
 
+
       const { token, ...userData } = res.data;
 
       localStorage.setItem('token', token);
-      axios.defaults.headers.common[
-        'Authorization'
-      ] = `Bearer ${token}`;
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
       setUser(userData);
 
@@ -108,7 +105,7 @@ export const AuthProvider = ({ children }) => {
     role
   ) => {
     try {
-      const res = await axios.post(
+      const res = await api.post(
         '/api/auth/register',
         {
           name,
@@ -122,9 +119,7 @@ export const AuthProvider = ({ children }) => {
 
       localStorage.setItem('token', token);
 
-      axios.defaults.headers.common[
-        'Authorization'
-      ] = `Bearer ${token}`;
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
       setUser(userData);
 
@@ -141,9 +136,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
+const logout = () => {
     localStorage.removeItem('token');
-    delete axios.defaults.headers.common['Authorization'];
+    delete api.defaults.headers.common['Authorization'];
     setUser(null);
   };
 

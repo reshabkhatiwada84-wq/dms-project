@@ -1,6 +1,5 @@
 import React, { useState, useContext, useRef } from 'react';
-import axios from 'axios';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, api } from '../context/AuthContext';
 import { Camera, Trash2, Upload, X, User, Mail, Shield, Clock } from 'lucide-react';
 
 const Profile = () => {
@@ -39,7 +38,7 @@ const Profile = () => {
       const formData = new FormData();
       formData.append('profilePhoto', file);
 
-      const res = await axios.put('/api/auth/profile-photo', formData);
+      const res = await api.put('/api/auth/profile-photo', formData);
 
       updateUser({ profilePhoto: res.data.profilePhoto });
       showToast('Profile photo updated successfully');
@@ -57,7 +56,7 @@ const Profile = () => {
     setUploading(true);
 
     try {
-      await axios.delete('/api/auth/profile-photo');
+      await api.delete('/api/auth/profile-photo');
       updateUser({ profilePhoto: { url: null, publicId: null } });
       showToast('Profile photo removed');
     } catch (error) {
@@ -191,7 +190,7 @@ const Profile = () => {
             <div>
               <p className="text-xs text-slate-400">Role</p>
               <p className="text-sm font-medium text-slate-200 capitalize">
-                {user.email === 'rishabh@gmail.com' ? 'Super Admin' : user.role}
+                {user.email === 'khd.rishabh@gmail.com' ? 'Super Admin' : user.role}
               </p>
             </div>
           </div>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
-import axios from 'axios';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, api } from '../context/AuthContext';
 import { Trash2, FileText, RotateCcw, AlertTriangle, Archive, FileX, ArrowLeft, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -24,7 +23,7 @@ const TrashView = () => {
 
   const fetchDeletedDocs = useCallback(async () => {
     try {
-      const res = await axios.get('/api/trash/documents');
+      const res = await api.get('/api/trash/documents');
       setDeletedDocs(res.data);
     } catch (err) {
       console.error('Failed to fetch deleted documents:', err);
@@ -33,7 +32,7 @@ const TrashView = () => {
 
   const fetchDeletedVersions = useCallback(async () => {
     try {
-      const res = await axios.get('/api/trash/versions');
+      const res = await api.get('/api/trash/versions');
       setDeletedVersions(res.data);
     } catch (err) {
       console.error('Failed to fetch deleted versions:', err);
@@ -48,7 +47,7 @@ const TrashView = () => {
   // ── Restore Document ─────────────────────────────────────────────────────
   const handleRestoreDoc = async (id) => {
     try {
-      await axios.post(`/api/trash/documents/${id}/restore`);
+      await api.post(`/api/trash/documents/${id}/restore`);
       setDeletedDocs((prev) => prev.filter((d) => d._id !== id));
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to restore document');
@@ -58,7 +57,7 @@ const TrashView = () => {
   // ── Restore Version ──────────────────────────────────────────────────────
   const handleRestoreVersion = async (id) => {
     try {
-      await axios.post(`/api/trash/versions/${id}/restore`);
+      await api.post(`/api/trash/versions/${id}/restore`);
       setDeletedVersions((prev) => prev.filter((v) => v._id !== id));
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to restore version');
@@ -70,10 +69,10 @@ const TrashView = () => {
     if (!confirmDelete) return;
     try {
       if (confirmDelete.type === 'doc') {
-        await axios.delete(`/api/trash/documents/${confirmDelete.id}`);
+        await api.delete(`/api/trash/documents/${confirmDelete.id}`);
         setDeletedDocs((prev) => prev.filter((d) => d._id !== confirmDelete.id));
       } else {
-        await axios.delete(`/api/trash/versions/${confirmDelete.id}`);
+        await api.delete(`/api/trash/versions/${confirmDelete.id}`);
         setDeletedVersions((prev) => prev.filter((v) => v._id !== confirmDelete.id));
       }
     } catch (err) {

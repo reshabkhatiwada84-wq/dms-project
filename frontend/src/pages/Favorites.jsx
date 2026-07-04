@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 import PreviewModal from '../components/PreviewModal';
 import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
@@ -44,7 +44,7 @@ const Favorites = () => {
     setError('');
     try {
       const params = { search, category: selectedCategory, favoritesOnly: true };
-      const res = await axios.get('/api/documents', { params });
+      const res = await api.get('/api/documents', { params });
       setDocuments(res.data);
     } catch (err) {
       console.error(err);
@@ -61,7 +61,7 @@ const Favorites = () => {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await axios.get('/api/folders');
+      const res = await api.get('/api/folders');
       setFolders(res.data);
     } catch (err) {
       console.error('Folders fetch error:', err);
@@ -82,7 +82,7 @@ const Favorites = () => {
   const handleToggleFavorite = async (e, doc) => {
     e.stopPropagation();
     try {
-      const res = await axios.put(`/api/documents/${doc._id}/favorite`);
+      const res = await api.put(`/api/documents/${doc._id}/favorite`);
       const { isFavorite, message } = res.data;
       
       showToast(message);
@@ -107,7 +107,7 @@ const Favorites = () => {
       confirmColor: 'bg-rose-500 hover:bg-rose-600',
       onConfirm: async () => {
         try {
-          await axios.delete(`/api/documents/${id}`);
+          await api.delete(`/api/documents/${id}`);
           fetchFavorites();
         } catch (err) {
           alert(err.response?.data?.message || 'Failed to delete document');
@@ -120,7 +120,7 @@ const Favorites = () => {
 
   const handleDownload = async (id, originalName) => {
     try {
-      const response = await axios({ url: `/api/documents/download/${id}`, method: 'GET', responseType: 'blob' });
+      const response = await api({ url: `/api/documents/download/${id}`, method: 'GET', responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;

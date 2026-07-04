@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 import {
   X, History, Download, RotateCcw, Trash2, CheckCircle2,
   Archive, Clock, User, HardDrive, AlertCircle, Upload, Loader2
@@ -34,9 +34,7 @@ const NewVersionUpload = ({ documentId, onSuccess, onCancel }) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      await axios.post(`/api/versions/${documentId}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await api.post(`/api/versions/${documentId}`, formData);
       onSuccess();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to upload new version');
@@ -87,7 +85,7 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`/api/versions/${document._id}`);
+      const res = await api.get(`/api/versions/${document._id}`);
       setVersions(res.data);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load version history');
@@ -108,7 +106,7 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
 
   const handleDownload = async (version) => {
     try {
-      const response = await axios({
+      const response = await api({
         url: `/api/versions/${document._id}/download/${version._id}`,
         method: 'GET',
         responseType: 'blob',
@@ -134,7 +132,7 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
       onConfirm: async () => {
         setActionLoading(version._id);
         try {
-          await axios.post(`/api/versions/${document._id}/restore/${version._id}`);
+          await api.post(`/api/versions/${document._id}/restore/${version._id}`);
           notify(`✓ Restored to v${version.versionNumber} successfully`);
           fetchVersions();
           if (onVersionChange) onVersionChange();
@@ -158,7 +156,7 @@ const VersionHistoryModal = ({ isOpen, onClose, document, onVersionChange }) => 
       onConfirm: async () => {
         setActionLoading(version._id);
         try {
-          const res = await axios.delete(`/api/versions/${document._id}/${version._id}`);
+          const res = await api.delete(`/api/versions/${document._id}/${version._id}`);
           if (res.data.documentDeleted) {
             onClose();
             if (onVersionChange) onVersionChange();

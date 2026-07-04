@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
+
 import { UploadCloud, X, Folder } from 'lucide-react';
 
 const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFolderId = '' }) => {
@@ -75,15 +76,11 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
     formData.append('category', category);
 
     try {
-      const res = await axios.post('/api/documents/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const res = await api.post('/api/documents/upload', formData);
 
       // If a folder was selected, assign the document to it
       if (folderId && res.data?._id) {
-        await axios.put(`/api/documents/${res.data._id}/folder`, { folderId });
+        await api.put(`/api/documents/${res.data._id}/folder`, { folderId });
       }
 
       setUploading(false);

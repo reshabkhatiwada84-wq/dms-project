@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useContext } from 'react';
+import { AuthContext, api } from '../context/AuthContext';
 import { X, Copy, Share2, Check, Shield, Edit3, Eye } from 'lucide-react';
 
 const ShareModal = ({ isOpen, onClose, document }) => {
@@ -15,7 +15,7 @@ const ShareModal = ({ isOpen, onClose, document }) => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.post(`/api/documents/${document._id}/share`, { permission });
+      const res = await api.post(`/api/documents/${document._id}/share`, { permission });
       const { shareToken } = res.data;
       const frontendLink = `${window.location.origin}/shared/${shareToken}`;
       setShareLink(frontendLink);

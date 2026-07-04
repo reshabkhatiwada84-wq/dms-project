@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 import { Folder, FolderOpen, FolderPlus, Pencil, Trash2, X, Check } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
@@ -27,7 +27,7 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
     setSaving(true);
     setError('');
     try {
-      await axios.post('/api/folders', { name: newName.trim() });
+      await api.post('/api/folders', { name: newName.trim() });
       setNewName('');
       setCreating(false);
       onFoldersChange();
@@ -50,7 +50,7 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
     setSaving(true);
     setError('');
     try {
-      await axios.put(`/api/folders/${id}`, { name: renameValue.trim() });
+      await api.put(`/api/folders/${id}`, { name: renameValue.trim() });
       setRenamingId(null);
       setRenameValue('');
       onFoldersChange();
@@ -71,7 +71,7 @@ const FolderPanel = ({ folders, selectedFolder, onSelectFolder, onFoldersChange 
       onConfirm: async () => {
         setError('');
         try {
-          await axios.delete(`/api/folders/${id}`);
+          await api.delete(`/api/folders/${id}`);
           if (selectedFolder === id) onSelectFolder('all');
           onFoldersChange();
         } catch (err) {

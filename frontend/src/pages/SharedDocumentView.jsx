@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 import { Download, FileText, UploadCloud, AlertCircle, CheckCircle2, Shield, Edit3, Eye } from 'lucide-react';
 
 const SharedDocumentView = () => {
@@ -17,7 +17,7 @@ const SharedDocumentView = () => {
   useEffect(() => {
     const fetchDoc = async () => {
       try {
-        const res = await axios.get(`/api/documents/public-info/${shareToken}`);
+        const res = await api.get(`/api/documents/public-info/${shareToken}`);
         setDocument(res.data);
       } catch (err) {
         setError(err.response?.data?.message || 'Document not found or link expired.');
@@ -29,7 +29,7 @@ const SharedDocumentView = () => {
   }, [shareToken]);
 
   const handleDownload = () => {
-    window.location.href = `/api/documents/public/${shareToken}`;
+    window.location.href = `${api.defaults.baseURL}/api/documents/public/${shareToken}`;
   };
 
   const handleFileChange = (e) => {
@@ -48,13 +48,11 @@ const SharedDocumentView = () => {
     formData.append('file', file);
 
     try {
-      await axios.post(`/api/documents/public/${shareToken}/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      await api.post(`/api/documents/public/${shareToken}/upload`, formData);
       setUploadSuccess(true);
       setFile(null);
       // Refresh doc info
-      const res = await axios.get(`/api/documents/public-info/${shareToken}`);
+      const res = await api.get(`/api/documents/public-info/${shareToken}`);
       setDocument(res.data);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to upload new version.');

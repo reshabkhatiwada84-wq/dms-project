@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
-import axios from 'axios';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, api } from '../context/AuthContext';
 import UploadModal from '../components/UploadModal';
 import PreviewModal from '../components/PreviewModal';
 import FolderPanel from '../components/FolderPanel';
@@ -165,7 +164,7 @@ const Dashboard = () => {
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      const res = await axios.get('/api/documents/stats');
+      const res = await api.get('/api/documents/stats');
       setStats(res.data);
     } catch (err) {
       console.error('Stats fetch error:', err);
@@ -176,7 +175,7 @@ const Dashboard = () => {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await axios.get('/api/folders');
+      const res = await api.get('/api/folders');
       setFolders(res.data);
     } catch (err) {
       console.error('Folders fetch error:', err);
@@ -190,7 +189,7 @@ const Dashboard = () => {
       const params = { search, category: selectedCategory };
       if (selectedFolder === 'none') params.folder = 'none';
       else if (selectedFolder !== 'all') params.folder = selectedFolder;
-      const res = await axios.get('/api/documents', { params });
+      const res = await api.get('/api/documents', { params });
       setDocuments(res.data);
     } catch (err) {
       console.error(err);
@@ -221,7 +220,7 @@ const Dashboard = () => {
       confirmColor: 'bg-rose-500 hover:bg-rose-600',
       onConfirm: async () => {
         try {
-          await axios.delete(`/api/documents/${id}`);
+          await api.delete(`/api/documents/${id}`);
           fetchDocuments();
           fetchStats();
         } catch (err) {
@@ -243,7 +242,7 @@ const Dashboard = () => {
   const handleToggleFavorite = async (e, doc) => {
     e.stopPropagation();
     try {
-      const res = await axios.put(`/api/documents/${doc._id}/favorite`);
+      const res = await api.put(`/api/documents/${doc._id}/favorite`);
       const { isFavorite, message } = res.data;
       
       showToast(message);
@@ -262,7 +261,7 @@ const Dashboard = () => {
 
   const handleDownload = async (id, originalName) => {
     try {
-      const response = await axios({ url: `/api/documents/download/${id}`, method: 'GET', responseType: 'blob' });
+      const response = await api({ url: `/api/documents/download/${id}`, method: 'GET', responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;

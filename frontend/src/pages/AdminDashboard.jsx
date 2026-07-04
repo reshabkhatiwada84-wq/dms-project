@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
-import { Users, FileText, HardDrive, ShieldAlert, Trash2, ArrowLeftRight } from 'lucide-react';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, api } from '../context/AuthContext';
+import { Users, FileText, HardDrive, ShieldAlert, Trash2, ArrowLeftRight, Plus, X } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
+
+const getRoleDisplay = (role) => {
+  switch (role) {
+    case 'superadmin':
+      return 'Super Admin';
+    case 'admin':
+      return 'Admin';
+    case 'user':
+      return 'User';
+    default:
+      return role;
+  }
+};
 
 const AdminDashboard = () => {
   const { user: currentUser } = useContext(AuthContext);
@@ -11,14 +23,20 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirmConfig, setConfirmConfig] = useState(null);
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({
+    name: '',
+    email: '',
+    password: ''
+  });
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
       const [statsRes, usersRes] = await Promise.all([
-        axios.get('/api/admin/stats'),
-        axios.get('/api/admin/users'),
+        api.get('/api/admin/stats'),
+        api.get('/api/admin/users'),
       ]);
       setStats(statsRes.data);
       setUsers(usersRes.data);
@@ -35,18 +53,14 @@ const AdminDashboard = () => {
   }, []);
 
   const handleToggleRole = (userObj) => {
-    const isMakingAdmin = userObj.role !== 'admin';
-    const actionText = isMakingAdmin ? 'make' : 'remove admin rights from';
-    const roleText = isMakingAdmin ? 'an ADMIN' : 'a standard USER';
-
     setConfirmConfig({
-      title: isMakingAdmin ? 'Make Admin' : 'Remove Admin Rights',
-      message: `Are you sure you want to ${actionText} ${userObj.name} (${roleText})?`,
+      title: userObj.role === 'admin' ? 'Remove Admin Rights' : 'Make Admin',
+      message: `Are you sure you want to ${userObj.role === 'admin' ? 'remove admin rights from' : 'make an admin'} ${userObj.name}?`,
       confirmText: 'Confirm',
       confirmColor: 'bg-amber-500 hover:bg-amber-600',
       onConfirm: async () => {
         try {
-          await axios.put(`/api/admin/users/${userObj._id}/role`);
+          await api.put(`/api/admin/users/${userObj._id}/role`);
           fetchData();
         } catch (err) {
           console.error(err);
@@ -66,7 +80,7 @@ const AdminDashboard = () => {
       confirmColor: 'bg-rose-500 hover:bg-rose-600',
       onConfirm: async () => {
         try {
-          await axios.delete(`/api/admin/users/${userId}`);
+          await api.delete(`/api/admin/users/${userId}`);
           fetchData();
         } catch (err) {
           console.error(err);
@@ -76,6 +90,26 @@ const AdminDashboard = () => {
         }
       }
     });
+  };
+
+  const handleCreateAdmin = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/api/admin/users', newAdmin);
+      setNewAdmin({ name: '', email: '', password: '' });
+      setShowCreateAdmin(false);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to create admin');
+    }
+  };
+
+  const canModifyUser = (userObj) => {
+    if (userObj.role === 'superadmin') return false;
+    if (userObj._id === currentUser?._id) return false;
+    if (currentUser?.role === 'admin' && userObj.role === 'admin') return false;
+    return true;
   };
 
   const formatBytes = (bytes, decimals = 2) => {
@@ -188,10 +222,20 @@ const AdminDashboard = () => {
         </div>
       </div>
 
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="text-xl font-bold text-white">Account Management</h3>
+        {currentUser?.role === 'superadmin' && (
+          <button
+          onClick={() => setShowCreateAdmin(true)}
+          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          Create Admin
+        </button>
+        )}
+      </div>
+
       <div className="glass-panel rounded-2xl border border-white/5 shadow-xl overflow-hidden mb-8">
-        <div className="px-6 py-4 border-b border-white/10 bg-white/5 text-left">
-          <h3 className="text-lg font-bold text-white">Account Management</h3>
-        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -210,22 +254,24 @@ const AdminDashboard = () => {
                   <td className="px-6 py-4 text-slate-400 text-left">{u.email}</td>
                   <td className="px-6 py-4 text-left">
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                      u.role === 'admin' 
+                      u.role === 'superadmin' 
+                        ? 'bg-red-500/10 text-red-400 border-red-500/25'
+                        : u.role === 'admin' 
                         ? 'bg-amber-500/10 text-amber-400 border-amber-500/25' 
                         : 'bg-slate-500/10 text-slate-400 border-slate-500/25'
                     }`}>
-                      {u.email === 'rishabh@gmail.com' ? 'Super Admin' : u.role}
+                      {getRoleDisplay(u.role)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-slate-400 text-xs text-left">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    {u._id !== currentUser?._id && u.email !== 'rishabh@gmail.com' ? (
+                    {canModifyUser(u) ? (
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => handleToggleRole(u)}
-                          title="Toggle Admin/User status"
+                          title={u.role === 'admin' ? 'Remove Admin Rights' : 'Make Admin'}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
                         >
                           <ArrowLeftRight className="h-4.5 w-4.5" />
@@ -240,7 +286,7 @@ const AdminDashboard = () => {
                       </div>
                     ) : (
                       <span className="text-[10px] text-slate-500 uppercase font-semibold">
-                        {u._id === currentUser?._id ? 'Current User' : 'Super Admin'}
+                        {u._id === currentUser?._id ? 'Current User' : 'Cannot Modify'}
                       </span>
                     )}
                   </td>
@@ -251,6 +297,70 @@ const AdminDashboard = () => {
         </div>
       </div>
       
+      {showCreateAdmin && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+          <div className="glass-panel p-6 rounded-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Create New Admin</h3>
+              <button
+                onClick={() => setShowCreateAdmin(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateAdmin} className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newAdmin.name}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, name: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={newAdmin.email}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newAdmin.password}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAdmin(false)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg"
+                >
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <ConfirmModal
         isOpen={!!confirmConfig}
         onClose={() => setConfirmConfig(null)}

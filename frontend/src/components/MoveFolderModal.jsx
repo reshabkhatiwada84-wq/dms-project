@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 import { FolderOpen, X, Check } from 'lucide-react';
 
 /**
@@ -22,7 +22,7 @@ const MoveFolderModal = ({ isOpen, onClose, document, folders, onSuccess }) => {
     setSaving(true);
     setError('');
     try {
-      await axios.put(`/api/documents/${document._id}/folder`, {
+      await api.put(`/api/documents/${document._id}/folder`, {
         folderId: selectedId || null,
       });
       onSuccess();
