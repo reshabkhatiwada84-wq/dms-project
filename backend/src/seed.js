@@ -13,12 +13,20 @@ const seedUsers = async () => {
     console.log('Cleared existing users.');
 
     await User.create({
+      name: 'Super Admin',
+      email: 'khd.rishabh@gmail.com',
+      password: 'khd@123',
+      role: 'admin',
+    });
+    console.log('Seeded Super Admin: khd.rishabh@gmail.com / khd@123');
+
+    await User.create({
       name: 'Admin User',
       email: 'admin@dms.com',
       password: 'adminpassword123',
-      role: 'admin',
+      role: 'user',
     });
-    console.log('Seeded Admin User: admin@dms.com / adminpassword123');
+    console.log('Seeded Standard User: admin@dms.com / adminpassword123');
 
     await User.create({
       name: 'Standard User',

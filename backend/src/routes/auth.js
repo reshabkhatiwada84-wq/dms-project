@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const User = require('../models/User');
+const Activity = require('../models/Activity');
 const { protect } = require('../middleware/auth');
 const { cloudinary, uploadProfileImage } = require('../config/cloudinary');
 
@@ -39,13 +40,11 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    const isFirstUser = (await User.countDocuments({})) === 0;
-
     const user = await User.create({
       name,
       email,
       password,
-      role: isFirstUser ? 'admin' : 'user',
+      role: 'user',
     });
 
     if (user) {
@@ -76,6 +75,13 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email }).select('+password');
 
     if (user && (await user.matchPassword(password))) {
+      // Log login activity
+      await Activity.create({
+        user: user._id,
+        action: 'login',
+        details: 'User logged in successfully',
+      });
+
       res.json({
         _id: user._id,
         name: user.name,

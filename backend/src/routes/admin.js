@@ -3,15 +3,17 @@ const router = express.Router();
 const User = require('../models/User');
 const Document = require('../models/Document');
 const Version = require('../models/Version');
-const { protect, admin } = require('../middleware/auth');
+const Activity = require('../models/Activity');
+const { protect, adminOrSuperAdmin, superAdminOnly } = require('../middleware/auth');
 const fs = require('fs');
 
+// All admin routes require protection and at least admin or superadmin
 router.use(protect);
-router.use(admin);
+router.use(adminOrSuperAdmin);
 
 // @desc    Get system stats
 // @route   GET /api/admin/stats
-// @access  Private/Admin
+// @access  Private (Admin/SuperAdmin)
 router.get('/stats', async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -47,7 +49,7 @@ router.get('/stats', async (req, res) => {
 
 // @desc    Get all users
 // @route   GET /api/admin/users
-// @access  Private/Admin
+// @access  Private (Admin/SuperAdmin)
 router.get('/users', async (req, res) => {
   try {
     const users = await User.find({}).sort({ createdAt: -1 });
@@ -57,30 +59,76 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// @desc    Create a new admin (superadmin only)
+// @route   POST /api/admin/users
+// @access  Private (SuperAdmin)
+router.post('/users', superAdminOnly, async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    const userExists = await User.findOne({ email: email.toLowerCase() });
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    const user = await User.create({
+      name,
+      email: email.toLowerCase(),
+      password,
+      role: 'admin'
+    });
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // @desc    Update user role
 // @route   PUT /api/admin/users/:id/role
-// @access  Private/Admin
+// @access  Private (SuperAdmin only can modify admins/users; admin can modify users)
 router.put('/users/:id/role', async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const userToModify = await User.findById(req.params.id);
 
-    if (!user) {
+    if (!userToModify) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.email === 'rishabh@gmail.com') {
-      return res.status(403).json({ message: 'The main administrator account cannot be modified.' });
+    // Can't modify superadmin
+    if (userToModify.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot modify super admin' });
     }
 
-    if (user._id.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: 'You cannot change your own role' });
+    // Can't modify yourself
+    if (userToModify._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'Cannot change your own role' });
     }
 
-    const requestedRole = req.body ? req.body.role : undefined;
-    user.role = requestedRole || (user.role === 'admin' ? 'user' : 'admin');
-    await user.save();
+    // Admin can only modify users; superadmin can modify admins and users
+    if (req.user.role === 'admin' && userToModify.role === 'admin') {
+      return res.status(403).json({ message: 'Admin cannot modify other admins' });
+    }
 
-    res.json(user);
+    const requestedRole = req.body.role;
+    // Validate role
+    if (requestedRole && !['user', 'admin'].includes(requestedRole)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+    // Can't make someone superadmin
+    if (requestedRole === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot create super admin' });
+    }
+
+    userToModify.role = requestedRole || (userToModify.role === 'admin' ? 'user' : 'admin');
+    await userToModify.save();
+
+    res.json(userToModify);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -88,24 +136,31 @@ router.put('/users/:id/role', async (req, res) => {
 
 // @desc    Delete a user and their documents
 // @route   DELETE /api/admin/users/:id
-// @access  Private/Admin
+// @access  Private (SuperAdmin only can delete admins; admin can delete users)
 router.delete('/users/:id', async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const userToDelete = await User.findById(req.params.id);
 
-    if (!user) {
+    if (!userToDelete) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.email === 'rishabh@gmail.com') {
-      return res.status(403).json({ message: 'The main administrator account cannot be deleted.' });
+    // Can't delete superadmin
+    if (userToDelete.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot delete super admin' });
     }
 
-    if (user._id.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: 'You cannot delete yourself' });
+    // Can't delete yourself
+    if (userToDelete._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'Cannot delete yourself' });
     }
 
-    const documents = await Document.find({ uploadedBy: user._id });
+    // Admin can only delete users; superadmin can delete admins and users
+    if (req.user.role === 'admin' && userToDelete.role === 'admin') {
+      return res.status(403).json({ message: 'Admin cannot delete other admins' });
+    }
+
+    const documents = await Document.find({ uploadedBy: userToDelete._id });
     for (const doc of documents) {
       // Delete all associated version files and records
       const versions = await Version.find({ documentId: doc._id });
@@ -121,6 +176,24 @@ router.delete('/users/:id', async (req, res) => {
 
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User and their documents & versions deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Get activity logs
+// @route   GET /api/admin/activities
+// @access  Private (Admin/SuperAdmin)
+router.get('/activities', async (req, res) => {
+  try {
+    const activities = await Activity.find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate('user', 'name email')
+      .populate('document', 'name')
+      .populate('folder', 'name');
+
+    res.json(activities);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

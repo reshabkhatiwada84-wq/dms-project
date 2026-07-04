@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const Document = require('../models/Document');
 const Version = require('../models/Version');
+const Activity = require('../models/Activity');
 const { protect, admin } = require('../middleware/auth');
 const { cloudinary } = require('../config/cloudinary');
 const path = require('path');
@@ -86,6 +87,14 @@ router.post('/documents/:id/restore', async (req, res) => {
       { documentId: doc._id },
       { isDeleted: false, deletedAt: null, deletedBy: null }
     );
+
+    // Log restore activity
+    await Activity.create({
+      user: req.user._id,
+      action: 'restore',
+      document: doc._id,
+      details: `Restored document: ${doc.title}`,
+    });
 
     res.json({ message: `Document "${doc.title}" restored successfully` });
   } catch (error) {

@@ -6,12 +6,28 @@ const crypto = require('crypto');
 const multer = require('multer');
 const Document = require('../models/Document');
 const Version = require('../models/Version');
+const Activity = require('../models/Activity');
 const { protect } = require('../middleware/auth');
 
 const { uploadToCloudinary } = require('../config/cloudinary');
 const https = require('https');
 
-const storage = multer.memoryStorage();
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Multer storage configuration - save to disk first
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'file-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
 
 const upload = multer({
   storage: storage,
@@ -23,9 +39,18 @@ const upload = multer({
 // @access  Private
 router.post('/upload', protect, upload.single('file'), async (req, res) => {
   try {
+    console.log('[Upload] Starting file upload');
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
+
+    console.log('[Upload] File received:', {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path
+    });
 
     const { title, description, category } = req.body;
 
@@ -33,38 +58,56 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'Title and category are required' });
     }
 
-    // Upload to Cloudinary
-    let cloudResult;
+    let cloudResult = null;
+    // Try to upload to Cloudinary first
     try {
-      cloudResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+      console.log('[Upload] Trying Cloudinary upload...');
+      const fileBuffer = fs.readFileSync(req.file.path);
+      cloudResult = await uploadToCloudinary(fileBuffer, req.file.originalname);
+      console.log('[Upload] Cloudinary upload succeeded:', cloudResult.public_id, cloudResult.secure_url);
     } catch (uploadErr) {
-      return res.status(500).json({ message: 'Failed to upload file to cloud storage' });
+      console.warn('[Upload] Cloudinary upload failed, using local storage:', uploadErr.message);
+      // Cloudinary failed, we'll use local storage
     }
 
-    const document = await Document.create({
+    // Prepare document data
+    // Always save local filename to filePath for backup
+    const docData = {
       title,
       description: description || '',
-      filename: cloudResult.public_id, // Store public_id as filename for reference
+      filename: req.file.filename,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
       category,
       uploadedBy: req.user._id,
-      cloudinaryId: cloudResult.public_id,
-      cloudinaryUrl: cloudResult.secure_url,
-    });
+      filePath: req.file.filename, // Always store local filename
+    };
+
+    // If Cloudinary upload succeeded, add cloudinary fields
+    if (cloudResult) {
+      docData.cloudinaryId = cloudResult.public_id;
+      docData.cloudinaryUrl = cloudResult.secure_url;
+      docData.filename = cloudResult.public_id;
+    }
+
+    console.log('[Upload] Creating document with data:', docData);
+    const document = await Document.create(docData);
 
     // Auto-create v1 Version record so the original file is always tracked
     let v1Hash = null;
     try {
-      v1Hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+      const fileBuffer = fs.readFileSync(req.file.path);
+      v1Hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     } catch (e) {
       // Non-critical: hash generation failure shouldn't block upload
     }
-    await Version.create({
+
+    // Prepare version data
+    const versionData = {
       documentId: document._id,
       versionNumber: 1,
-      filename: cloudResult.public_id,
+      filename: req.file.filename,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
@@ -73,14 +116,31 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       expiryDate: null,
       isCurrentVersion: true,
       fileHash: v1Hash,
-      cloudinaryId: cloudResult.public_id,
-      cloudinaryUrl: cloudResult.secure_url,
+      filePath: req.file.filename, // Always store local filename for backup
       actionLog: [{ action: 'uploaded', performedBy: req.user._id }],
+    };
+
+    if (cloudResult) {
+      versionData.cloudinaryId = cloudResult.public_id;
+      versionData.cloudinaryUrl = cloudResult.secure_url;
+      versionData.filename = cloudResult.public_id;
+    }
+
+    await Version.create(versionData);
+
+    console.log('[Upload] Document uploaded successfully!');
+
+    // Log upload activity
+    await Activity.create({
+      user: req.user._id,
+      action: 'upload',
+      document: document._id,
+      details: `Uploaded document: ${document.title}`,
     });
 
     res.status(201).json(document);
   } catch (error) {
-    console.error(error);
+    console.error('[Upload] Error:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -222,44 +282,85 @@ router.get('/', protect, async (req, res) => {
 // @access  Private
 router.get('/preview/:id', protect, async (req, res) => {
   try {
+    console.log('[Preview] Request for document ID:', req.params.id);
     const document = await Document.findById(req.params.id);
 
     if (!document) {
+      console.log('[Preview] Document not found');
       return res.status(404).json({ message: 'Document not found' });
     }
+
+    console.log('[Preview] Document found:', { 
+      _id: document._id, 
+      cloudinaryUrl: document.cloudinaryUrl, 
+      filename: document.filename,
+      mimeType: document.mimeType 
+    });
 
     if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Try Cloudinary first
     if (document.cloudinaryUrl) {
+      console.log('[Preview] Streaming from Cloudinary:', document.cloudinaryUrl);
       // Stream from Cloudinary with inline Content-Disposition
       https.get(document.cloudinaryUrl, (cloudinaryRes) => {
+        console.log('[Preview] Cloudinary response status:', cloudinaryRes.statusCode);
+        // If Cloudinary response is not okay, fall back to local file
+        if (cloudinaryRes.statusCode >= 400) {
+          console.warn('[Preview] Cloudinary returned error status, falling back to local file');
+          streamLocalFile();
+          return;
+        }
         res.setHeader('Content-Type', document.mimeType);
         res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
         res.setHeader('X-Frame-Options', 'SAMEORIGIN');
         cloudinaryRes.pipe(res);
       }).on('error', (e) => {
-        res.status(500).json({ message: 'Error streaming file from cloud storage' });
+        console.error('[Preview] Cloudinary error, falling back to local file:', e);
+        streamLocalFile();
       });
       return;
     }
 
     // Local file fallback
-    let fullPath = null;
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (document.filename) fullPath = path.join(uploadDir, document.filename);
-    if (!fullPath || !fs.existsSync(fullPath)) {
-      if (document.filePath) fullPath = document.filePath;
-    }
-    if (!fullPath || !fs.existsSync(fullPath)) {
-      return res.status(404).json({ message: 'Physical file not found on server' });
-    }
+    streamLocalFile();
 
-    res.setHeader('Content-Type', document.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-    fs.createReadStream(fullPath).pipe(res);
+    function streamLocalFile() {
+      console.log('[Preview] Using local file fallback');
+      let fullPath = null;
+      const uploadDir = path.join(__dirname, '../../uploads');
+      
+      // First try filePath (which should always have local filename)
+      if (document.filePath) {
+        fullPath = path.join(uploadDir, document.filePath);
+      }
+      
+      // If not found, try filename
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        if (document.filename) fullPath = path.join(uploadDir, document.filename);
+      }
+      
+      console.log('[Preview] Full path:', fullPath);
+      console.log('[Preview] File exists:', fullPath ? fs.existsSync(fullPath) : false);
+      
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        // If headers not sent yet, send error
+        if (!res.headersSent) {
+          return res.status(404).json({ message: 'Physical file not found on server' });
+        }
+        return;
+      }
+
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+      }
+      fs.createReadStream(fullPath).pipe(res);
+    }
   } catch (error) {
+    console.error('[Preview] Error:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -280,40 +381,74 @@ router.get('/download/:id', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to download this document' });
     }
 
+    // Log download activity
+    await Activity.create({
+      user: req.user._id,
+      action: 'download',
+      document: document._id,
+      details: `Downloaded document: ${document.title}`,
+    });
+
+    // Try Cloudinary first
     if (document.cloudinaryUrl) {
+      console.log('[Download] Streaming from Cloudinary:', document.cloudinaryUrl);
       // Stream from Cloudinary
       https.get(document.cloudinaryUrl, (cloudinaryRes) => {
+        console.log('[Download] Cloudinary response status:', cloudinaryRes.statusCode);
+        // If Cloudinary response is not okay, fall back to local file
+        if (cloudinaryRes.statusCode >= 400) {
+          console.warn('[Download] Cloudinary returned error status, falling back to local file');
+          downloadLocalFile();
+          return;
+        }
         res.setHeader('Content-Type', document.mimeType);
         res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`);
         cloudinaryRes.pipe(res);
       }).on('error', (e) => {
-        res.status(500).json({ message: 'Error streaming file from cloud storage' });
+        console.error('[Download] Cloudinary error, falling back to local file:', e);
+        downloadLocalFile();
       });
       return;
     }
 
-    // Try filename first, fall back to filePath for backward compatibility (local files)
-    let fullPath = null;
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (document.filename) {
-      fullPath = path.join(uploadDir, document.filename);
-    }
-    if (!fullPath || !fs.existsSync(fullPath)) {
+    // Local file fallback
+    downloadLocalFile();
+
+    function downloadLocalFile() {
+      console.log('[Download] Using local file fallback');
+      let fullPath = null;
+      const uploadDir = path.join(__dirname, '../../uploads');
+      
+      // First try filePath (which should always have local filename)
       if (document.filePath) {
-        fullPath = document.filePath;
+        fullPath = path.join(uploadDir, document.filePath);
       }
-    }
-
-    if (!fullPath || !fs.existsSync(fullPath)) {
-      return res.status(404).json({ message: 'Physical file not found on server' });
-    }
-
-    res.download(fullPath, document.originalName, { dotfiles: 'allow' }, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ message: 'Error downloading file' });
+      
+      // If not found, try filename
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        if (document.filename) {
+          fullPath = path.join(uploadDir, document.filename);
+        }
       }
-    });
+      
+      console.log('[Download] Full path:', fullPath);
+      console.log('[Download] File exists:', fullPath ? fs.existsSync(fullPath) : false);
+
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        if (!res.headersSent) {
+          return res.status(404).json({ message: 'Physical file not found on server' });
+        }
+        return;
+      }
+
+      res.download(fullPath, document.originalName, { dotfiles: 'allow' }, (err) => {
+        if (err && !res.headersSent) {
+          res.status(500).json({ message: 'Error downloading file' });
+        }
+      });
+    }
   } catch (error) {
+    console.error('[Download] Error:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -344,6 +479,14 @@ router.delete('/:id', protect, async (req, res) => {
       { documentId: document._id },
       { isDeleted: true, deletedAt: new Date(), deletedBy: req.user._id }
     );
+
+    // Log delete activity
+    await Activity.create({
+      user: req.user._id,
+      action: 'delete',
+      document: document._id,
+      details: `Moved document to trash: ${document.title}`,
+    });
 
     res.json({ message: 'Document moved to trash successfully' });
   } catch (error) {
@@ -376,6 +519,14 @@ router.post('/:id/share', protect, async (req, res) => {
     }
     
     await document.save();
+
+    // Log share activity
+    await Activity.create({
+      user: req.user._id,
+      action: 'share',
+      document: document._id,
+      details: `Shared document: ${document.title}`,
+    });
 
     res.json({ shareToken: document.shareToken, permission: document.sharePermission });
   } catch (error) {
@@ -477,11 +628,13 @@ router.post('/public/:shareToken/upload', upload.single('file'), async (req, res
     }
 
     // Upload to Cloudinary
-    let cloudResult;
+    let cloudResult = null;
     try {
-      cloudResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+      const fileBuffer = fs.readFileSync(req.file.path);
+      cloudResult = await uploadToCloudinary(fileBuffer, req.file.originalname);
     } catch (uploadErr) {
-      return res.status(500).json({ message: 'Failed to upload new version to cloud storage' });
+      console.warn('[Public Share Upload] Cloudinary upload failed, using local storage:', uploadErr.message);
+      // Cloudinary failed, we'll use local storage
     }
 
     // Unset current versions
@@ -494,34 +647,46 @@ router.post('/public/:shareToken/upload', upload.single('file'), async (req, res
 
     let vHash = null;
     try {
-      vHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+      const fileBuffer = fs.readFileSync(req.file.path);
+      vHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     } catch (e) {
       // Non-critical
     }
 
-    // Create new version
-    await Version.create({
+    // Prepare version data
+    const versionData = {
       documentId: document._id,
       versionNumber: versionCount + 1,
-      filename: cloudResult.public_id,
+      filename: req.file.filename,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
       uploadedBy: document.uploadedBy, // Attribute to the original owner
       isCurrentVersion: true,
       fileHash: vHash,
-      cloudinaryId: cloudResult.public_id,
-      cloudinaryUrl: cloudResult.secure_url,
+      filePath: req.file.filename, // Always store local filename
       actionLog: [{ action: 'uploaded', note: 'Uploaded via public share link' }],
-    });
+    };
+
+    if (cloudResult) {
+      versionData.cloudinaryId = cloudResult.public_id;
+      versionData.cloudinaryUrl = cloudResult.secure_url;
+      versionData.filename = cloudResult.public_id;
+    }
+
+    // Create new version
+    await Version.create(versionData);
 
     // Update main document pointer
-    document.filename = cloudResult.public_id;
+    document.filename = cloudResult ? cloudResult.public_id : req.file.filename;
+    document.filePath = req.file.filename; // Always update local filename
     document.originalName = req.file.originalname;
     document.mimeType = req.file.mimetype;
     document.size = req.file.size;
-    document.cloudinaryId = cloudResult.public_id;
-    document.cloudinaryUrl = cloudResult.secure_url;
+    if (cloudResult) {
+      document.cloudinaryId = cloudResult.public_id;
+      document.cloudinaryUrl = cloudResult.secure_url;
+    }
     await document.save();
 
     res.status(200).json({ message: 'New version uploaded successfully' });

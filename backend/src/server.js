@@ -7,9 +7,29 @@ dotenv.config();
 const path = require('path');
 const connectDB = require('./config/db');
 const { startCleanupScheduler } = require('./cleanup');
+const User = require('./models/User');
 
 // Connect to database
 connectDB();
+
+// Create default super admin if none exists
+const createDefaultSuperAdmin = async () => {
+  try {
+    const existingSuperAdmin = await User.findOne({ role: 'superadmin' });
+    if (!existingSuperAdmin) {
+      await User.create({
+        name: 'Rishabh',
+        email: 'khd.rishabh@gmail.com',
+        password: 'rishabh@123',
+        role: 'superadmin'
+      });
+      console.log('✅ Default super admin created');
+    }
+  } catch (err) {
+    console.error('❌ Error creating default super admin:', err);
+  }
+};
+createDefaultSuperAdmin();
 
 const app = express();
 
@@ -18,20 +38,46 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Enable CORS
+// Notes:
+// - Netlify frontend origin in your logs: https://dmsproject-rishab.netlify.app
+// - Also allow the Render domain (useful for redirects / same-site setups).
 const allowedOrigins = [
-  'http://localhost:5173', // Vite dev server
-  process.env.FRONTEND_URL, // Production frontend URL (Netlify)
+  process.env.FRONTEND_URL,
+  process.env.NETLIFY_URL,
+  'https://dmsproject-rishab.netlify.app',
+  'https://dmsproject-rishab.netlify.com',
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow all localhost origins (any port) for development
+    if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:')) {
+      return callback(null, true);
     }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // In production, if origin isn't whitelisted, block it.
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Explicit preflight handler (some hosts/proxies require this)
+app.options('*', cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:')) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // Mount routers

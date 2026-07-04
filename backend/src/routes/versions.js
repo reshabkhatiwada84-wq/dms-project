@@ -13,7 +13,21 @@ const https = require('https');
 
 const EXPIRY_DAYS = 7;
 
-const storage = multer.memoryStorage();
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'ver-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
 
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -63,7 +77,8 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     // ── SHA-256 hash generation for duplicate detection ───────────────────
     let fileHash;
     try {
-      fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+      const fileBuffer = fs.readFileSync(req.file.path);
+      fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     } catch (hashErr) {
       return res.status(500).json({ message: 'Failed to generate file hash. Upload cancelled.' });
     }
@@ -78,11 +93,13 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     }
 
     // Upload to Cloudinary
-    let cloudResult;
+    let cloudResult = null;
     try {
-      cloudResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+      const fileBuffer = fs.readFileSync(req.file.path);
+      cloudResult = await uploadToCloudinary(fileBuffer, req.file.originalname);
     } catch (uploadErr) {
-      return res.status(500).json({ message: 'Failed to upload version to cloud storage' });
+      console.warn('[Version Upload] Cloudinary upload failed, using local storage:', uploadErr.message);
+      // Cloudinary failed, we'll use local storage
     }
 
     // Get existing non-deleted versions sorted ascending
@@ -99,11 +116,11 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
       { isCurrentVersion: false, expiryDate: calcExpiry() }
     );
 
-    // Create new version (current version never expires)
-    const newVersion = await Version.create({
+    // Prepare version data
+    const versionData = {
       documentId: doc._id,
       versionNumber: nextVersionNumber,
-      filename: cloudResult.public_id,
+      filename: req.file.filename,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
@@ -112,23 +129,34 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
       expiryDate: null,
       isCurrentVersion: true,
       fileHash,
-      cloudinaryId: cloudResult.public_id,
-      cloudinaryUrl: cloudResult.secure_url,
+      filePath: req.file.filename, // Always store local filename for backup
       actionLog: [{ action: 'uploaded', performedBy: req.user._id }],
-    });
+    };
+
+    if (cloudResult) {
+      versionData.cloudinaryId = cloudResult.public_id;
+      versionData.cloudinaryUrl = cloudResult.secure_url;
+      versionData.filename = cloudResult.public_id;
+    }
+
+    // Create new version (current version never expires)
+    const newVersion = await Version.create(versionData);
 
     // Update the main Document record to reflect the latest version file
-    doc.filename = cloudResult.public_id;
+    doc.filename = cloudResult ? cloudResult.public_id : req.file.filename;
     doc.originalName = req.file.originalname;
     doc.mimeType = req.file.mimetype;
     doc.size = req.file.size;
-    doc.cloudinaryId = cloudResult.public_id;
-    doc.cloudinaryUrl = cloudResult.secure_url;
+    if (cloudResult) {
+      doc.cloudinaryId = cloudResult.public_id;
+      doc.cloudinaryUrl = cloudResult.secure_url;
+    }
     await doc.save();
 
     const populated = await Version.findById(newVersion._id).populate('uploadedBy', 'name email');
     res.status(201).json(populated);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -146,38 +174,64 @@ router.get('/:documentId/download/:versionId', protect, async (req, res) => {
     const version = await Version.findOne({ _id: req.params.versionId, documentId: req.params.documentId });
     if (!version) return res.status(404).json({ message: 'Version not found' });
 
+    // Try Cloudinary first
     if (version.cloudinaryUrl) {
+      console.log('[Version Download] Streaming from Cloudinary:', version.cloudinaryUrl);
       // Stream from Cloudinary
       https.get(version.cloudinaryUrl, (cloudinaryRes) => {
+        console.log('[Version Download] Cloudinary response status:', cloudinaryRes.statusCode);
+        // If Cloudinary response is not okay, fall back to local file
+        if (cloudinaryRes.statusCode >= 400) {
+          console.warn('[Version Download] Cloudinary returned error status, falling back to local file');
+          downloadLocalFile();
+          return;
+        }
         res.setHeader('Content-Type', version.mimeType);
         res.setHeader('Content-Disposition', `attachment; filename="${version.originalName}"`);
         cloudinaryRes.pipe(res);
       }).on('error', (e) => {
-        res.status(500).json({ message: 'Error streaming file from cloud storage' });
+        console.error('[Version Download] Cloudinary error, falling back to local file:', e);
+        downloadLocalFile();
       });
       return;
     }
 
-    // Try filename first, fall back to filePath for backward compatibility
-    let fullPath = null;
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (version.filename) {
-      fullPath = path.join(uploadDir, version.filename);
-    }
-    if (!fullPath || !fs.existsSync(fullPath)) {
+    // Local file fallback
+    downloadLocalFile();
+
+    function downloadLocalFile() {
+      console.log('[Version Download] Using local file fallback');
+      let fullPath = null;
+      const uploadDir = path.join(__dirname, '../../uploads');
+      
+      // First try filePath (which should always have local filename)
       if (version.filePath) {
-        fullPath = version.filePath;
+        fullPath = path.join(uploadDir, version.filePath);
       }
-    }
+      
+      // If not found, try filename
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        if (version.filename) {
+          fullPath = path.join(uploadDir, version.filename);
+        }
+      }
+      
+      console.log('[Version Download] Full path:', fullPath);
+      console.log('[Version Download] File exists:', fullPath ? fs.existsSync(fullPath) : false);
 
-    if (!fullPath || !fs.existsSync(fullPath)) {
-      return res.status(404).json({ message: 'Physical file not found on server' });
-    }
+      if (!fullPath || !fs.existsSync(fullPath)) {
+        if (!res.headersSent) {
+          return res.status(404).json({ message: 'Physical file not found on server' });
+        }
+        return;
+      }
 
-    res.download(fullPath, version.originalName, { dotfiles: 'allow' }, (err) => {
-      if (err && !res.headersSent) res.status(500).json({ message: 'Error downloading file' });
-    });
+      res.download(fullPath, version.originalName, { dotfiles: 'allow' }, (err) => {
+        if (err && !res.headersSent) res.status(500).json({ message: 'Error downloading file' });
+      });
+    }
   } catch (error) {
+    console.error('[Version Download] Error:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -197,12 +251,14 @@ router.post('/:documentId/restore/:versionId', protect, async (req, res) => {
 
     // Try filename first, fall back to filePath for backward compatibility
     let fullPath = null;
-    if (targetVersion.filename) {
-      fullPath = path.join(uploadDir, targetVersion.filename);
+    const uploadDir = path.join(__dirname, '../../uploads');
+    // First try filePath
+    if (targetVersion.filePath) {
+      fullPath = path.join(uploadDir, targetVersion.filePath);
     }
     if (!fullPath || !fs.existsSync(fullPath)) {
-      if (targetVersion.filePath) {
-        fullPath = targetVersion.filePath;
+      if (targetVersion.filename) {
+        fullPath = path.join(uploadDir, targetVersion.filename);
       }
     }
 
