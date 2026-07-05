@@ -331,10 +331,10 @@ const Dashboard = () => {
       <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            {user?.role === 'admin' ? 'Admin Workspace' : 'My Workspace'}
+            {(user?.role === 'admin' || user?.role === 'superadmin') ? 'Admin Workspace' : 'My Workspace'}
           </h1>
           <p className="mt-1.5 text-slate-400 text-sm">
-            {user?.role === 'admin'
+            {(user?.role === 'admin' || user?.role === 'superadmin')
               ? 'System-wide overview across all user accounts.'
               : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! Here's your document overview.`}
           </p>
@@ -540,7 +540,7 @@ const Dashboard = () => {
                           {new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </p>
                       </div>
-                      {user?.role === 'admin' && (
+                      {(user?.role === 'admin' || user?.role === 'superadmin') && (
                         <span className="text-[10px] text-amber-400 font-semibold truncate max-w-[80px]">
                           {doc.uploadedBy?.name || 'Unknown'}
                         </span>
@@ -703,7 +703,7 @@ const Dashboard = () => {
                         {new Date(doc.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                       </span>
                     </div>
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || user?.role === 'superadmin') && (
                       <div className="flex justify-between border-t border-white/5 pt-1 mt-1 text-[10px]">
                         <span>Uploaded By:</span>
                         <span className="text-amber-400 truncate max-w-[150px] font-bold">{doc.uploadedBy?.name || 'Unknown'}</span>
@@ -821,7 +821,7 @@ const Dashboard = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white group-hover:text-sky-400 transition-colors truncate">{doc.title}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {user?.role === 'admin' ? `${doc.uploadedBy?.name || 'Unknown'} uploaded` : 'You uploaded'} ·&nbsp;
+                        {(user?.role === 'admin' || user?.role === 'superadmin') ? `${doc.uploadedBy?.name || 'Unknown'} uploaded` : 'You uploaded'} ·&nbsp;
                         <span className="font-bold text-slate-300">{doc.originalName?.split('.').pop().toUpperCase() || 'FILE'}</span> ·&nbsp;
                         <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getCategoryColor(doc.category)}`}>{doc.category}</span>
                         &nbsp;· {formatBytes(doc.size)}
