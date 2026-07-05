@@ -89,6 +89,9 @@ app.options('*', cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// Serve uploaded files (for profile photos fallback)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Mount routers
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/documents', require('./routes/documents'));

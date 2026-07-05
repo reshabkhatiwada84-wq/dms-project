@@ -37,6 +37,10 @@ const userSchema = mongoose.Schema(
         type: String,
         default: null,
       },
+      fileName: {
+        type: String,
+        default: null,
+      },
     },
     favorites: [
       {

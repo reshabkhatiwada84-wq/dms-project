@@ -103,12 +103,13 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
+      const link = window.document.createElement('a');
       link.href = url;
       link.setAttribute('download', document.originalName);
-      document.body.appendChild(link);
+      window.document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      window.document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
       alert('Failed to download file');
