@@ -144,6 +144,7 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+  const [selectedDocs, setSelectedDocs] = useState(new Set());
 
   // ── Folder state ──────────────────────────────────────────────────────────
   const [folders, setFolders] = useState([]);
@@ -191,6 +192,7 @@ const Dashboard = () => {
       else if (selectedFolder !== 'all') params.folder = selectedFolder;
       const res = await api.get('/api/documents', { params });
       setDocuments(res.data);
+      setSelectedDocs(new Set());
     } catch (err) {
       console.error(err);
       setError('Failed to fetch documents. Please try again.');
@@ -237,6 +239,48 @@ const Dashboard = () => {
     setTimeout(() => {
       setToastMessage('');
     }, 3000);
+  };
+
+  const handleSelectDoc = (e, docId) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedDocs);
+    if (newSelected.has(docId)) {
+      newSelected.delete(docId);
+    } else {
+      newSelected.add(docId);
+    }
+    setSelectedDocs(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedDocs.size === documents.length && documents.length > 0) {
+      setSelectedDocs(new Set());
+    } else {
+      setSelectedDocs(new Set(documents.map(d => d._id)));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedDocs.size === 0) return;
+    setConfirmConfig({
+      title: 'Delete Selected Documents',
+      message: `Are you sure you want to delete ${selectedDocs.size} selected document(s)?`,
+      confirmText: 'Delete All',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        try {
+          await Promise.all(Array.from(selectedDocs).map(id => api.delete(`/api/documents/${id}`)));
+          showToast(`${selectedDocs.size} document(s) deleted successfully`);
+          setSelectedDocs(new Set());
+          fetchDocuments();
+          fetchStats();
+        } catch (err) {
+          alert('Failed to delete some documents');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   const handleToggleFavorite = async (e, doc) => {
@@ -616,20 +660,42 @@ const Dashboard = () => {
                 className="glass-input block w-full rounded-xl py-3 pl-12 pr-4 text-sm"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-white/5 pb-4">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`rounded-full px-4 py-1.5 text-xs font-semibold border transition-all ${
-                    selectedCategory === cat
-                      ? 'bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20'
-                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold border transition-all ${
+                      selectedCategory === cat
+                        ? 'bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              {/* Bulk Actions */}
+              {documents.length > 0 && (
+                <div className="flex items-center gap-3 mt-4 sm:mt-0">
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                  >
+                    {selectedDocs.size === documents.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  {selectedDocs.size > 0 && (
+                    <button
+                      onClick={handleBulkDelete}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete Selected ({selectedDocs.size})</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -665,6 +731,18 @@ const Dashboard = () => {
                   <div>
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
+                        <div 
+                          onClick={(e) => handleSelectDoc(e, doc._id)}
+                          className={`w-5 h-5 rounded flex items-center justify-center border transition-colors cursor-pointer ${
+                            selectedDocs.has(doc._id) 
+                              ? 'bg-sky-500 border-sky-500 text-white' 
+                              : 'border-white/20 hover:border-sky-400 text-transparent bg-white/5'
+                          }`}
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-500/10 text-sky-400">
                           <FileText className="h-6 w-6" />
                         </div>

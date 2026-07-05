@@ -45,10 +45,11 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
 
         const isImage = document.mimeType.startsWith('image/');
         const isPdf = document.mimeType === 'application/pdf';
+        const isVideo = document.mimeType.startsWith('video/');
         const isDocx = document.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-        if (isPdf) {
-          // For PDF: use the preview endpoint URL directly in the iframe
+        if (isPdf || isVideo) {
+          // For PDF/Video: use the preview endpoint URL directly
           // We append the token as a query param so the backend can authorize it
           const token = localStorage.getItem('token');
           setPreviewUrl(`${API_URL}/api/documents/preview/${document._id}?token=${token}`);
@@ -123,6 +124,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
 
   const isImage = document.mimeType.startsWith('image/');
   const isPdf = document.mimeType === 'application/pdf';
+  const isVideo = document.mimeType.startsWith('video/');
   const isDocx = document.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
   const renderPreview = () => {
@@ -170,6 +172,21 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
         <pre className="w-full h-[55vh] overflow-auto bg-slate-950 p-4 rounded-xl text-slate-300 font-mono text-sm text-left whitespace-pre-wrap border border-white/5">
           {textContent}
         </pre>
+      );
+    }
+
+    if (isVideo && previewUrl) {
+      return (
+        <div className="flex justify-center p-2 bg-slate-950/20 rounded-xl">
+          <video
+            src={previewUrl}
+            controls
+            controlsList="nodownload"
+            className="max-h-[60vh] max-w-full rounded-lg shadow-lg border border-white/5"
+          >
+            Your browser does not support the video tag.
+          </video>
+        </div>
       );
     }
 
