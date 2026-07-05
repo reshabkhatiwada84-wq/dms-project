@@ -151,7 +151,7 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
 router.get('/stats', protect, async (req, res) => {
   try {
     let query = { isDeleted: { $ne: true } };
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -239,7 +239,7 @@ router.get('/', protect, async (req, res) => {
     
     let query = { isDeleted: { $ne: true } };
     
-    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin') {
+    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -297,7 +297,7 @@ router.get('/preview/:id', protect, async (req, res) => {
       mimeType: document.mimeType 
     });
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -377,7 +377,7 @@ router.get('/download/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this document' });
     }
 
@@ -464,7 +464,7 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to delete this document' });
     }
 
@@ -505,7 +505,7 @@ router.post('/:id/share', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to share this document' });
     }
 
@@ -707,7 +707,7 @@ router.put('/:id/folder', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to move this document' });
     }
 

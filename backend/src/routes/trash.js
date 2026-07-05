@@ -17,7 +17,7 @@ router.use(protect);
 router.get('/documents', async (req, res) => {
   try {
     let query = { isDeleted: true };
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -48,8 +48,8 @@ router.get('/versions', async (req, res) => {
   try {
     let query = { isDeleted: true };
 
-    // Non-admin users can only see deleted versions from their own documents
-    if (req.user.role !== 'admin') {
+    // Non-admin/superadmin users can only see deleted versions from their own documents
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       const userDocs = await Document.find({ uploadedBy: req.user._id }).select('_id');
       query.documentId = { $in: userDocs.map((d) => d._id) };
     }
@@ -72,7 +72,7 @@ router.post('/documents/:id/restore', async (req, res) => {
     const doc = await Document.findOne({ _id: req.params.id, isDeleted: true });
     if (!doc) return res.status(404).json({ message: 'Deleted document not found' });
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to restore this document' });
     }
 
@@ -116,7 +116,7 @@ router.post('/versions/:id/restore', async (req, res) => {
       });
     }
 
-    if (req.user.role !== 'admin' && parentDoc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && parentDoc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to restore this version' });
     }
 
@@ -140,7 +140,7 @@ router.delete('/documents/:id', async (req, res) => {
     const doc = await Document.findOne({ _id: req.params.id, isDeleted: true });
     if (!doc) return res.status(404).json({ message: 'Deleted document not found' });
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to permanently delete this document' });
     }
 
@@ -182,7 +182,7 @@ router.delete('/versions/:id', async (req, res) => {
     if (!version) return res.status(404).json({ message: 'Deleted version not found' });
 
     const parentDoc = await Document.findById(version.documentId._id || version.documentId);
-    if (req.user.role !== 'admin' && parentDoc && parentDoc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && parentDoc && parentDoc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to permanently delete this version' });
     }
 
