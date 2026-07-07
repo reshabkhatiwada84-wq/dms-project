@@ -151,7 +151,7 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
 router.get('/stats', protect, async (req, res) => {
   try {
     let query = { isDeleted: { $ne: true } };
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -239,7 +239,7 @@ router.get('/', protect, async (req, res) => {
     
     let query = { isDeleted: { $ne: true } };
     
-    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin') {
+    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       query.uploadedBy = req.user._id;
     }
 
@@ -297,31 +297,14 @@ router.get('/preview/:id', protect, async (req, res) => {
       mimeType: document.mimeType 
     });
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
     // Try Cloudinary first
     if (document.cloudinaryUrl) {
-      console.log('[Preview] Streaming from Cloudinary:', document.cloudinaryUrl);
-      // Stream from Cloudinary with inline Content-Disposition
-      https.get(document.cloudinaryUrl, (cloudinaryRes) => {
-        console.log('[Preview] Cloudinary response status:', cloudinaryRes.statusCode);
-        // If Cloudinary response is not okay, fall back to local file
-        if (cloudinaryRes.statusCode >= 400) {
-          console.warn('[Preview] Cloudinary returned error status, falling back to local file');
-          streamLocalFile();
-          return;
-        }
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-        cloudinaryRes.pipe(res);
-      }).on('error', (e) => {
-        console.error('[Preview] Cloudinary error, falling back to local file:', e);
-        streamLocalFile();
-      });
-      return;
+      console.log('[Preview] Redirecting to Cloudinary:', document.cloudinaryUrl);
+      return res.redirect(document.cloudinaryUrl);
     }
 
     // Local file fallback
@@ -346,7 +329,6 @@ router.get('/preview/:id', protect, async (req, res) => {
       console.log('[Preview] File exists:', fullPath ? fs.existsSync(fullPath) : false);
       
       if (!fullPath || !fs.existsSync(fullPath)) {
-        // If headers not sent yet, send error
         if (!res.headersSent) {
           return res.status(404).json({ message: 'Physical file not found on server' });
         }
@@ -354,14 +336,20 @@ router.get('/preview/:id', protect, async (req, res) => {
       }
 
       if (!res.headersSent) {
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+        return res.sendFile(fullPath, {
+          headers: {
+            'Content-Type': document.mimeType,
+            'Content-Disposition': `inline; filename="${document.originalName}"`,
+            'Accept-Ranges': 'bytes'
+          }
+        });
       }
-      fs.createReadStream(fullPath).pipe(res);
     }
   } catch (error) {
     console.error('[Preview] Error:', error);
-    res.status(500).json({ message: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
   }
 });
 
@@ -377,7 +365,7 @@ router.get('/download/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this document' });
     }
 
@@ -464,7 +452,7 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to delete this document' });
     }
 
@@ -505,7 +493,7 @@ router.post('/:id/share', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to share this document' });
     }
 
@@ -707,7 +695,7 @@ router.put('/:id/folder', protect, async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (document.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to move this document' });
     }
 
@@ -765,6 +753,98 @@ router.get('/favorites', protect, async (req, res) => {
 
     res.json(documents);
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Compare metadata of two documents
+// @route   POST /api/documents/compare-metadata
+// @access  Private
+router.post('/compare-metadata', protect, async (req, res) => {
+  try {
+    const { document1Id, document2Id } = req.body;
+
+    if (!document1Id || !document2Id) {
+      return res.status(400).json({ message: 'Both document1Id and document2Id are required' });
+    }
+
+    const doc1 = await Document.findOne({ _id: document1Id, isDeleted: { $ne: true } })
+      .populate('uploadedBy', 'name email')
+      .populate('folder', 'name');
+      
+    const doc2 = await Document.findOne({ _id: document2Id, isDeleted: { $ne: true } })
+      .populate('uploadedBy', 'name email')
+      .populate('folder', 'name');
+
+    if (!doc1 || !doc2) {
+      return res.status(404).json({ message: 'One or both documents not found' });
+    }
+
+    // Check permissions (User must be owner, or admin/superadmin)
+    const canAccessDoc = (doc) => 
+      doc.uploadedBy._id.toString() === req.user._id.toString() || 
+      req.user.role === 'admin' || 
+      req.user.role === 'superadmin';
+
+    if (!canAccessDoc(doc1) || !canAccessDoc(doc2)) {
+      return res.status(403).json({ message: 'Not authorized to compare these documents' });
+    }
+
+    const formatSize = (bytes) => {
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const formatDate = (date) => date ? new Date(date).toLocaleString() : 'N/A';
+
+    const comparisonFields = [
+      { field: 'Title', val1: doc1.title, val2: doc2.title },
+      { field: 'Original File Name', val1: doc1.originalName, val2: doc2.originalName },
+      { field: 'File Type (MIME Type)', val1: doc1.mimeType, val2: doc2.mimeType },
+      { field: 'File Size', val1: formatSize(doc1.size), val2: formatSize(doc2.size) },
+      { field: 'Category', val1: doc1.category, val2: doc2.category },
+      { field: 'Uploaded By', val1: doc1.uploadedBy?.name || 'Unknown', val2: doc2.uploadedBy?.name || 'Unknown' },
+      { field: 'Folder', val1: doc1.folder?.name || 'Root', val2: doc2.folder?.name || 'Root' },
+      { field: 'Upload Date', val1: formatDate(doc1.createdAt), val2: formatDate(doc2.createdAt) },
+      { field: 'Last Modified Date', val1: formatDate(doc1.updatedAt), val2: formatDate(doc2.updatedAt) },
+      { field: 'Favorite Status', val1: doc1.favoritedBy?.length > 0 ? 'Yes' : 'No', val2: doc2.favoritedBy?.length > 0 ? 'Yes' : 'No' },
+      { field: 'Trash Status', val1: doc1.isDeleted ? 'Yes' : 'No', val2: doc2.isDeleted ? 'Yes' : 'No' }
+    ];
+
+    let sameCount = 0;
+    let diffCount = 0;
+
+    const comparison = comparisonFields.map(item => {
+      const isSame = item.val1 === item.val2;
+      if (isSame) sameCount++;
+      else diffCount++;
+
+      return {
+        field: item.field,
+        file1: item.val1,
+        file2: item.val2,
+        status: isSame ? 'Same' : 'Different'
+      };
+    });
+
+    const totalCompared = comparisonFields.length;
+    const matchPercentage = Math.round((sameCount / totalCompared) * 100);
+
+    res.json({
+      summary: {
+        totalCompared,
+        same: sameCount,
+        different: diffCount,
+        matchPercentage
+      },
+      comparison
+    });
+
+  } catch (error) {
+    console.error('Compare metadata error:', error);
     res.status(500).json({ message: error.message });
   }
 });

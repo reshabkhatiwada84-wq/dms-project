@@ -2,14 +2,30 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const { protect } = require('../middleware/auth');
 const { cloudinary, uploadProfileImage } = require('../config/cloudinary');
 
-// Multer memory storage for profile photo uploads
+// Ensure uploads directory exists for profile photos too
+const profileUploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(profileUploadsDir)) {
+  fs.mkdirSync(profileUploadsDir, { recursive: true });
+}
+
+// Multer disk storage for profile photo uploads (local fallback)
 const profileUpload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, profileUploadsDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    },
+  }),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -53,7 +69,7 @@ router.post('/register', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        profilePhoto: user.profilePhoto || { url: null, publicId: null },
+        profilePhoto: user.profilePhoto || { url: null, publicId: null, fileName: null },
         token: generateToken(user._id),
       });
     } else {
@@ -87,7 +103,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        profilePhoto: user.profilePhoto || { url: null, publicId: null },
+        profilePhoto: user.profilePhoto || { url: null, publicId: null, fileName: null },
         token: generateToken(user._id),
       });
     } else {
@@ -172,7 +188,12 @@ router.post('/reset-password', async (req, res) => {
 // @route   GET /api/auth/me
 // @access  Private
 router.get('/me', protect, async (req, res) => {
-  res.json(req.user);
+  // Ensure profilePhoto has all fields
+  const userData = {
+    ...req.user.toObject(),
+    profilePhoto: req.user.profilePhoto || { url: null, publicId: null, fileName: null }
+  };
+  res.json(userData);
 });
 
 // @desc    Upload or replace profile photo
@@ -192,17 +213,41 @@ router.put('/profile-photo', protect, profileUpload.single('profilePhoto'), asyn
       try {
         await cloudinary.uploader.destroy(user.profilePhoto.publicId, { resource_type: 'image' });
       } catch (e) {
-        console.error('[ProfilePhoto] Failed to delete old photo:', e.message);
+        console.error('[ProfilePhoto] Failed to delete old photo from Cloudinary:', e.message);
+      }
+    }
+    // Also delete old local file if exists
+    if (user.profilePhoto && user.profilePhoto.fileName) {
+      const oldLocalPath = path.join(profileUploadsDir, user.profilePhoto.fileName);
+      try {
+        if (fs.existsSync(oldLocalPath)) {
+          fs.unlinkSync(oldLocalPath);
+        }
+      } catch (e) {
+        console.error('[ProfilePhoto] Failed to delete old local file:', e.message);
       }
     }
 
-    // Upload new photo
-    const result = await uploadProfileImage(req.file.buffer);
+    let result;
+    // Try to upload new photo to Cloudinary first
+    try {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      result = await uploadProfileImage(fileBuffer);
+      user.profilePhoto = {
+        url: result.secure_url,
+        publicId: result.public_id,
+        fileName: null,
+      };
+    } catch (cloudErr) {
+      console.warn('[ProfilePhoto] Cloudinary upload failed, using local storage:', cloudErr.message);
+      // Fallback to local storage
+      user.profilePhoto = {
+        url: `/uploads/${req.file.filename}`,
+        publicId: null,
+        fileName: req.file.filename,
+      };
+    }
 
-    user.profilePhoto = {
-      url: result.secure_url,
-      publicId: result.public_id,
-    };
     await user.save();
 
     res.json({
@@ -229,6 +274,18 @@ router.delete('/profile-photo', protect, async (req, res) => {
         await cloudinary.uploader.destroy(user.profilePhoto.publicId, { resource_type: 'image' });
       } catch (e) {
         console.error('[ProfilePhoto] Failed to delete from Cloudinary:', e.message);
+      }
+    }
+
+    // Delete local file if exists
+    if (user.profilePhoto && user.profilePhoto.fileName) {
+      const oldLocalPath = path.join(profileUploadsDir, user.profilePhoto.fileName);
+      try {
+        if (fs.existsSync(oldLocalPath)) {
+          fs.unlinkSync(oldLocalPath);
+        }
+      } catch (e) {
+        console.error('[ProfilePhoto] Failed to delete local file:', e.message);
       }
     }
 

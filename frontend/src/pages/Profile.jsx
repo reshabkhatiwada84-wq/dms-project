@@ -17,6 +17,7 @@ const Profile = () => {
 
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
+    console.log('📸 Selected file:', file);
     if (!file) return;
 
     // Validate file type
@@ -37,12 +38,19 @@ const Profile = () => {
     try {
       const formData = new FormData();
       formData.append('profilePhoto', file);
+      console.log('📤 Sending FormData:', formData);
 
-      const res = await api.put('/api/auth/profile-photo', formData);
+      const res = await api.put('/api/auth/profile-photo', formData, {
+        headers: {
+          // Important: Let axios set the Content-Type with boundary automatically
+          'Content-Type': undefined,
+        },
+      });
 
       updateUser({ profilePhoto: res.data.profilePhoto });
       showToast('Profile photo updated successfully');
     } catch (error) {
+      console.error('❌ Upload error:', error);
       showToast(error?.response?.data?.message || 'Failed to upload photo', 'error');
     } finally {
       setUploading(false);
@@ -128,6 +136,14 @@ const Profile = () => {
               <Camera className="h-4 w-4" />
             </button>
 
+            {/* Click-outside overlay (rendered before dropdown so dropdown is on top) */}
+            {showMenu && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowMenu(false)}
+              />
+            )}
+
             {/* Dropdown Menu */}
             {showMenu && (
               <div
@@ -190,7 +206,7 @@ const Profile = () => {
             <div>
               <p className="text-xs text-slate-400">Role</p>
               <p className="text-sm font-medium text-slate-200 capitalize">
-                {user.email === 'khd.rishabh@gmail.com' ? 'Super Admin' : user.role}
+                {user.role === 'superadmin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'User'}
               </p>
             </div>
           </div>
@@ -213,13 +229,7 @@ const Profile = () => {
         </div>
       </div>
 
-      {/* Close menu when clicking outside */}
-      {showMenu && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setShowMenu(false)}
-        />
-      )}
+
 
       <style>{`
         @keyframes slide-in {

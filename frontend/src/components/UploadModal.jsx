@@ -21,7 +21,30 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
     }
   }, [defaultFolderId, isOpen]);
 
+  // Lock background scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
+
   if (!isOpen) return null;
+
+  const clearFile = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFile(null);
+    setTitle(''); // clear old title so next file's name auto-fills correctly
+    // Reset the hidden <input type="file"> so the same file can be chosen again
+    const input = document.getElementById('file-upload');
+    if (input) input.value = '';
+  };
 
   const setSelectedFile = (selected) => {
     if (!selected) return;
@@ -154,8 +177,19 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
               PDF, DOC, DOCX, Images — up to 20 MB
             </p>
             {file && (
-              <div className="mt-3 text-xs text-slate-300 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                Selected: <span className="font-bold">{file.name}</span> ({(file.size / 1024 / 1024).toFixed(2)} MB)
+              <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 pl-3 pr-1.5 py-1.5 rounded-full border border-white/10">
+                <span className="truncate max-w-[220px]">
+                  Selected: <span className="font-bold text-white">{file.name}</span>
+                  <span className="text-slate-400 ml-1">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearFile}
+                  title="Remove selected file"
+                  className="flex-shrink-0 ml-1 h-5 w-5 flex items-center justify-center rounded-full bg-rose-500/20 hover:bg-rose-500/50 text-rose-400 hover:text-white transition-all"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </div>
             )}
           </label>

@@ -44,8 +44,8 @@ router.get('/:documentId', protect, async (req, res) => {
     const doc = await Document.findById(req.params.documentId);
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
-    // Non-admins can only view their own document versions
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    // Non-admin/superadmin can only view their own document versions
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to view versions of this document' });
     }
 
@@ -68,7 +68,7 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to upload a version of this document' });
     }
 
@@ -167,7 +167,7 @@ router.get('/:documentId/download/:versionId', protect, async (req, res) => {
     const doc = await Document.findById(req.params.documentId);
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to download this version' });
     }
 
@@ -242,7 +242,7 @@ router.post('/:documentId/restore/:versionId', protect, async (req, res) => {
     const doc = await Document.findById(req.params.documentId);
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to restore versions of this document' });
     }
 
@@ -305,7 +305,7 @@ router.delete('/:documentId/:versionId', protect, async (req, res) => {
     const doc = await Document.findById(req.params.documentId);
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
-    if (req.user.role !== 'admin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && doc.uploadedBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to delete this version' });
     }
 
@@ -354,10 +354,10 @@ router.delete('/:documentId/:versionId', protect, async (req, res) => {
 // ─── GET /api/versions/stats/summary — version stats for dashboard ────────────
 router.get('/stats/summary', protect, async (req, res) => {
   try {
-    const matchQuery = req.user.role === 'admin' ? {} : {};
+    const matchQuery = (req.user.role === 'admin' || req.user.role === 'superadmin') ? {} : {};
 
     // Total versions
-    let docQuery = req.user.role === 'admin' ? {} : { uploadedBy: req.user._id };
+    let docQuery = (req.user.role === 'admin' || req.user.role === 'superadmin') ? {} : { uploadedBy: req.user._id };
     const userDocs = await Document.find(docQuery).select('_id');
     const docIds = userDocs.map(d => d._id);
 

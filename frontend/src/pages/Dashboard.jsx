@@ -6,6 +6,7 @@ import FolderPanel from '../components/FolderPanel';
 import MoveFolderModal from '../components/MoveFolderModal';
 import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
+import CompareMetadataModal from '../components/CompareMetadataModal';
 import {
   Download, FileText, Search, Trash2, Upload, AlertCircle,
   HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch, Star
@@ -144,6 +145,9 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+  const [selectedDocs, setSelectedDocs] = useState(new Set());
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [compareData, setCompareData] = useState(null);
 
   // ── Folder state ──────────────────────────────────────────────────────────
   const [folders, setFolders] = useState([]);
@@ -191,6 +195,7 @@ const Dashboard = () => {
       else if (selectedFolder !== 'all') params.folder = selectedFolder;
       const res = await api.get('/api/documents', { params });
       setDocuments(res.data);
+      setSelectedDocs(new Set());
     } catch (err) {
       console.error(err);
       setError('Failed to fetch documents. Please try again.');
@@ -237,6 +242,124 @@ const Dashboard = () => {
     setTimeout(() => {
       setToastMessage('');
     }, 3000);
+  };
+
+  const handleSelectDoc = (e, docId) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedDocs);
+    if (newSelected.has(docId)) {
+      newSelected.delete(docId);
+    } else {
+      newSelected.add(docId);
+    }
+    setSelectedDocs(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedDocs.size === documents.length && documents.length > 0) {
+      setSelectedDocs(new Set());
+    } else {
+      setSelectedDocs(new Set(documents.map(d => d._id)));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedDocs.size === 0) return;
+    setConfirmConfig({
+      title: 'Delete Selected Documents',
+      message: `Are you sure you want to delete ${selectedDocs.size} selected document(s)?`,
+      confirmText: 'Delete All',
+      confirmColor: 'bg-rose-500 hover:bg-rose-600',
+      onConfirm: async () => {
+        try {
+          await Promise.all(Array.from(selectedDocs).map(id => api.delete(`/api/documents/${id}`)));
+          showToast(`${selectedDocs.size} document(s) deleted successfully`);
+          setSelectedDocs(new Set());
+          fetchDocuments();
+          fetchStats();
+        } catch (err) {
+          alert('Failed to delete some documents');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
+  };
+
+  const handleCompareMetadata = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (selectedDocs.size !== 2) {
+      alert('Please select exactly two documents to compare.');
+      return;
+    }
+    
+    const [doc1Id, doc2Id] = Array.from(selectedDocs);
+    const doc1 = documents.find(d => d._id === doc1Id);
+    const doc2 = documents.find(d => d._id === doc2Id);
+    
+    if (!doc1 || !doc2) {
+      alert('Could not find selected documents in the current list.');
+      return;
+    }
+
+    const formatSize = (bytes) => {
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const formatDate = (date) => date ? new Date(date).toLocaleString() : 'N/A';
+
+    const comparisonFields = [
+      { field: 'Title', val1: doc1.title, val2: doc2.title },
+      { field: 'Original File Name', val1: doc1.originalName, val2: doc2.originalName },
+      { field: 'File Type (MIME Type)', val1: doc1.mimeType, val2: doc2.mimeType },
+      { field: 'File Size', val1: formatSize(doc1.size), val2: formatSize(doc2.size) },
+      { field: 'Category', val1: doc1.category, val2: doc2.category },
+      { field: 'Uploaded By', val1: doc1.uploadedBy?.name || 'Unknown', val2: doc2.uploadedBy?.name || 'Unknown' },
+      { field: 'Folder', val1: doc1.folder?.name || 'Root', val2: doc2.folder?.name || 'Root' },
+      { field: 'Upload Date', val1: formatDate(doc1.createdAt), val2: formatDate(doc2.createdAt) },
+      { field: 'Last Modified Date', val1: formatDate(doc1.updatedAt), val2: formatDate(doc2.updatedAt) },
+      { field: 'Favorite Status', val1: doc1.favoritedBy?.length > 0 ? 'Yes' : 'No', val2: doc2.favoritedBy?.length > 0 ? 'Yes' : 'No' },
+      { field: 'Trash Status', val1: doc1.isDeleted ? 'Yes' : 'No', val2: doc2.isDeleted ? 'Yes' : 'No' }
+    ];
+
+    let sameCount = 0;
+    let diffCount = 0;
+
+    const comparison = comparisonFields.map(item => {
+      const isSame = item.val1 === item.val2;
+      if (isSame) sameCount++;
+      else diffCount++;
+
+      return {
+        field: item.field,
+        file1: item.val1,
+        file2: item.val2,
+        status: isSame ? 'Same' : 'Different'
+      };
+    });
+
+    const totalCompared = comparisonFields.length;
+    const matchPercentage = Math.round((sameCount / totalCompared) * 100);
+
+    setCompareData({
+      summary: {
+        totalCompared,
+        same: sameCount,
+        different: diffCount,
+        matchPercentage
+      },
+      comparison
+    });
+    
+    setIsCompareOpen(true);
   };
 
   const handleToggleFavorite = async (e, doc) => {
@@ -331,10 +454,10 @@ const Dashboard = () => {
       <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            {user?.role === 'admin' ? 'Admin Workspace' : 'My Workspace'}
+            {(user?.role === 'admin' || user?.role === 'superadmin') ? 'Admin Workspace' : 'My Workspace'}
           </h1>
           <p className="mt-1.5 text-slate-400 text-sm">
-            {user?.role === 'admin'
+            {(user?.role === 'admin' || user?.role === 'superadmin')
               ? 'System-wide overview across all user accounts.'
               : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! Here's your document overview.`}
           </p>
@@ -540,7 +663,7 @@ const Dashboard = () => {
                           {new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </p>
                       </div>
-                      {user?.role === 'admin' && (
+                      {(user?.role === 'admin' || user?.role === 'superadmin') && (
                         <span className="text-[10px] text-amber-400 font-semibold truncate max-w-[80px]">
                           {doc.uploadedBy?.name || 'Unknown'}
                         </span>
@@ -616,20 +739,57 @@ const Dashboard = () => {
                 className="glass-input block w-full rounded-xl py-3 pl-12 pr-4 text-sm"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-white/5 pb-4">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`rounded-full px-4 py-1.5 text-xs font-semibold border transition-all ${
-                    selectedCategory === cat
-                      ? 'bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20'
-                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold border transition-all ${
+                      selectedCategory === cat
+                        ? 'bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              {/* Bulk Actions */}
+              {documents.length > 0 && (
+                <div className="flex items-center gap-3 mt-4 sm:mt-0">
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                  >
+                    {selectedDocs.size === documents.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  {selectedDocs.size === 2 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Button literally clicked');
+                        handleCompareMetadata(e);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors z-50 cursor-pointer"
+                    >
+                      <Activity className="h-3.5 w-3.5 pointer-events-none" />
+                      <span className="pointer-events-none">Compare Metadata</span>
+                    </button>
+                  )}
+                  {selectedDocs.size > 0 && (
+                    <button
+                      onClick={handleBulkDelete}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete Selected ({selectedDocs.size})</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -665,6 +825,18 @@ const Dashboard = () => {
                   <div>
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
+                        <div 
+                          onClick={(e) => handleSelectDoc(e, doc._id)}
+                          className={`w-5 h-5 rounded flex items-center justify-center border transition-colors cursor-pointer ${
+                            selectedDocs.has(doc._id) 
+                              ? 'bg-sky-500 border-sky-500 text-white' 
+                              : 'border-white/20 hover:border-sky-400 text-transparent bg-white/5'
+                          }`}
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-500/10 text-sky-400">
                           <FileText className="h-6 w-6" />
                         </div>
@@ -703,7 +875,7 @@ const Dashboard = () => {
                         {new Date(doc.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                       </span>
                     </div>
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || user?.role === 'superadmin') && (
                       <div className="flex justify-between border-t border-white/5 pt-1 mt-1 text-[10px]">
                         <span>Uploaded By:</span>
                         <span className="text-amber-400 truncate max-w-[150px] font-bold">{doc.uploadedBy?.name || 'Unknown'}</span>
@@ -821,7 +993,7 @@ const Dashboard = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white group-hover:text-sky-400 transition-colors truncate">{doc.title}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {user?.role === 'admin' ? `${doc.uploadedBy?.name || 'Unknown'} uploaded` : 'You uploaded'} ·&nbsp;
+                        {(user?.role === 'admin' || user?.role === 'superadmin') ? `${doc.uploadedBy?.name || 'Unknown'} uploaded` : 'You uploaded'} ·&nbsp;
                         <span className="font-bold text-slate-300">{doc.originalName?.split('.').pop().toUpperCase() || 'FILE'}</span> ·&nbsp;
                         <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getCategoryColor(doc.category)}`}>{doc.category}</span>
                         &nbsp;· {formatBytes(doc.size)}
@@ -873,6 +1045,11 @@ const Dashboard = () => {
         onClose={() => { setIsVersionOpen(false); setVersionDoc(null); }}
         document={versionDoc}
         onVersionChange={() => { fetchDocuments(); fetchStats(); }}
+      />
+      <CompareMetadataModal
+        isOpen={isCompareOpen}
+        onClose={() => setIsCompareOpen(false)}
+        data={compareData}
       />
     </div>
   );

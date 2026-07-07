@@ -76,6 +76,11 @@ function App() {
               />
             </Routes>
           </main>
+          <footer className="py-4 text-center">
+            <p className="text-[10px] text-slate-500/60 font-medium tracking-wide">
+              Developed By Rishabh
+            </p>
+          </footer>
         </div>
       </AuthProvider>
     </Router>

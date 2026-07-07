@@ -11,7 +11,7 @@ router.use(protect);
 // @access  Private
 router.get('/', async (req, res) => {
   try {
-    const query = req.user.role === 'admin' ? {} : { owner: req.user._id };
+    const query = (req.user.role === 'admin' || req.user.role === 'superadmin') ? {} : { owner: req.user._id };
     const folders = await Folder.find(query).sort({ name: 1 });
     res.json(folders);
   } catch (error) {
@@ -50,7 +50,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Folder not found' });
     }
 
-    if (folder.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (folder.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to rename this folder' });
     }
 
@@ -81,7 +81,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Folder not found' });
     }
 
-    if (folder.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (folder.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to delete this folder' });
     }
 
