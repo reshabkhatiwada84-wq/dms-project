@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { FolderOpen, Lock, Mail, User } from 'lucide-react';
+import { FolderOpen, Lock, Mail, User, Eye, EyeOff } from 'lucide-react';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -10,6 +10,8 @@ const Register = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [pwdName] = useState(() => 'field_' + Math.random().toString(36).substring(2, 10));
 
   const { register, user } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -68,6 +70,12 @@ const Register = () => {
         )}
 
         <form className="mt-8 space-y-5" onSubmit={handleSubmit} autoComplete="off">
+          {/* FAKE INPUTS TO TRAP CHROME AUTOFILL */}
+          <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} aria-hidden="true">
+            <input type="text" name="email_fake" tabIndex="-1" autoComplete="username" />
+            <input type="password" name="password_fake" tabIndex="-1" autoComplete="new-password" />
+          </div>
+
           <div className="space-y-4 rounded-md">
             <div>
               <label htmlFor="full-name" className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -102,7 +110,7 @@ const Register = () => {
                   id="reg_identifier"
                   name="reg_identifier"
                   type="text"
-                  autoComplete="off"
+                  autoComplete="nope"
                   readOnly={isReadOnly}
                   required
                   value={email}
@@ -122,19 +130,25 @@ const Register = () => {
                   <Lock className="h-5 w-5" />
                 </div>
                 <input
-                  id="reg_secret"
-                  name="reg_secret"
-                  type="text"
-                  style={{ WebkitTextSecurity: 'disc' }}
-                  autoComplete="off"
+                  id={pwdName}
+                  name={pwdName}
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   data-lpignore="true"
                   readOnly={isReadOnly}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="glass-input block w-full rounded-xl py-3 pl-10 pr-3 text-sm focus:outline-none"
+                  className="glass-input block w-full rounded-xl py-3 pl-10 pr-10 text-sm focus:outline-none"
                   placeholder="Min. 6 characters"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 

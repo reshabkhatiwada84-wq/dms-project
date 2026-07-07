@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext, api } from '../context/AuthContext';
-import { FolderOpen, Lock, Mail, KeyRound, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FolderOpen, Lock, Mail, KeyRound, X, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -9,6 +9,10 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [pwdName] = useState(() => 'field_' + Math.random().toString(36).substring(2, 10));
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
 
   // Forgot password flow
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -134,7 +138,7 @@ const Login = () => {
             <FolderOpen className="h-8 w-8" />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white">
-            Welcome back to DMS by Rishabh
+            Welcome back to DMS 
           </h2>
           <p className="mt-2 text-sm text-slate-400">
             Sign in to access your secure document cabinet
@@ -148,6 +152,12 @@ const Login = () => {
         )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="off">
+          {/* FAKE INPUTS TO TRAP CHROME AUTOFILL */}
+          <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} aria-hidden="true">
+            <input type="text" name="email_fake" tabIndex="-1" autoComplete="username" />
+            <input type="password" name="password_fake" tabIndex="-1" autoComplete="current-password" />
+          </div>
+          
           <div className="space-y-4 rounded-md">
             <div>
               <label htmlFor="email-address" className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -161,7 +171,7 @@ const Login = () => {
                   id="login_identifier"
                   name="login_identifier"
                   type="text"
-                  autoComplete="off"
+                  autoComplete="nope"
                   readOnly={isReadOnly}
                   required
                   value={email}
@@ -190,19 +200,25 @@ const Login = () => {
                   <Lock className="h-5 w-5" />
                 </div>
                 <input
-                  id="secret_key"
-                  name="secret_key"
-                  type="text"
-                  style={{ WebkitTextSecurity: 'disc' }}
-                  autoComplete="off"
+                  id={pwdName}
+                  name={pwdName}
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   data-lpignore="true"
                   readOnly={isReadOnly}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="glass-input block w-full rounded-xl py-3 pl-10 pr-3 text-sm focus:outline-none"
+                  className="glass-input block w-full rounded-xl py-3 pl-10 pr-10 text-sm focus:outline-none"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
           </div>
@@ -311,14 +327,21 @@ const Login = () => {
                     <Lock className="h-5 w-5" />
                   </div>
                   <input
-                    type="password"
+                    type={showForgotNewPassword ? 'text' : 'password'}
                     required
                     minLength={6}
                     value={forgotNewPassword}
                     onChange={(e) => setForgotNewPassword(e.target.value)}
-                    className="glass-input block w-full rounded-xl py-2.5 pl-10 pr-3 text-sm focus:outline-none"
+                    className="glass-input block w-full rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none"
                     placeholder="At least 6 characters"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    {showForgotNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
 
                 <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -329,14 +352,21 @@ const Login = () => {
                     <Lock className="h-5 w-5" />
                   </div>
                   <input
-                    type="password"
+                    type={showForgotConfirmPassword ? 'text' : 'password'}
                     required
                     minLength={6}
                     value={forgotConfirmPassword}
                     onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                    className="glass-input block w-full rounded-xl py-2.5 pl-10 pr-3 text-sm focus:outline-none"
+                    className="glass-input block w-full rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none"
                     placeholder="Repeat new password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotConfirmPassword(!showForgotConfirmPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    {showForgotConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
 
                 <button

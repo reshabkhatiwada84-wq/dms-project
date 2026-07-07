@@ -6,6 +6,7 @@ import FolderPanel from '../components/FolderPanel';
 import MoveFolderModal from '../components/MoveFolderModal';
 import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
+import CompareMetadataModal from '../components/CompareMetadataModal';
 import {
   Download, FileText, Search, Trash2, Upload, AlertCircle,
   HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch, Star
@@ -145,6 +146,8 @@ const Dashboard = () => {
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
   const [selectedDocs, setSelectedDocs] = useState(new Set());
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [compareData, setCompareData] = useState(null);
 
   // ── Folder state ──────────────────────────────────────────────────────────
   const [folders, setFolders] = useState([]);
@@ -281,6 +284,82 @@ const Dashboard = () => {
         }
       }
     });
+  };
+
+  const handleCompareMetadata = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (selectedDocs.size !== 2) {
+      alert('Please select exactly two documents to compare.');
+      return;
+    }
+    
+    const [doc1Id, doc2Id] = Array.from(selectedDocs);
+    const doc1 = documents.find(d => d._id === doc1Id);
+    const doc2 = documents.find(d => d._id === doc2Id);
+    
+    if (!doc1 || !doc2) {
+      alert('Could not find selected documents in the current list.');
+      return;
+    }
+
+    const formatSize = (bytes) => {
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const formatDate = (date) => date ? new Date(date).toLocaleString() : 'N/A';
+
+    const comparisonFields = [
+      { field: 'Title', val1: doc1.title, val2: doc2.title },
+      { field: 'Original File Name', val1: doc1.originalName, val2: doc2.originalName },
+      { field: 'File Type (MIME Type)', val1: doc1.mimeType, val2: doc2.mimeType },
+      { field: 'File Size', val1: formatSize(doc1.size), val2: formatSize(doc2.size) },
+      { field: 'Category', val1: doc1.category, val2: doc2.category },
+      { field: 'Uploaded By', val1: doc1.uploadedBy?.name || 'Unknown', val2: doc2.uploadedBy?.name || 'Unknown' },
+      { field: 'Folder', val1: doc1.folder?.name || 'Root', val2: doc2.folder?.name || 'Root' },
+      { field: 'Upload Date', val1: formatDate(doc1.createdAt), val2: formatDate(doc2.createdAt) },
+      { field: 'Last Modified Date', val1: formatDate(doc1.updatedAt), val2: formatDate(doc2.updatedAt) },
+      { field: 'Favorite Status', val1: doc1.favoritedBy?.length > 0 ? 'Yes' : 'No', val2: doc2.favoritedBy?.length > 0 ? 'Yes' : 'No' },
+      { field: 'Trash Status', val1: doc1.isDeleted ? 'Yes' : 'No', val2: doc2.isDeleted ? 'Yes' : 'No' }
+    ];
+
+    let sameCount = 0;
+    let diffCount = 0;
+
+    const comparison = comparisonFields.map(item => {
+      const isSame = item.val1 === item.val2;
+      if (isSame) sameCount++;
+      else diffCount++;
+
+      return {
+        field: item.field,
+        file1: item.val1,
+        file2: item.val2,
+        status: isSame ? 'Same' : 'Different'
+      };
+    });
+
+    const totalCompared = comparisonFields.length;
+    const matchPercentage = Math.round((sameCount / totalCompared) * 100);
+
+    setCompareData({
+      summary: {
+        totalCompared,
+        same: sameCount,
+        different: diffCount,
+        matchPercentage
+      },
+      comparison
+    });
+    
+    setIsCompareOpen(true);
   };
 
   const handleToggleFavorite = async (e, doc) => {
@@ -685,6 +764,21 @@ const Dashboard = () => {
                   >
                     {selectedDocs.size === documents.length ? 'Deselect All' : 'Select All'}
                   </button>
+                  {selectedDocs.size === 2 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Button literally clicked');
+                        handleCompareMetadata(e);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors z-50 cursor-pointer"
+                    >
+                      <Activity className="h-3.5 w-3.5 pointer-events-none" />
+                      <span className="pointer-events-none">Compare Metadata</span>
+                    </button>
+                  )}
                   {selectedDocs.size > 0 && (
                     <button
                       onClick={handleBulkDelete}
@@ -951,6 +1045,11 @@ const Dashboard = () => {
         onClose={() => { setIsVersionOpen(false); setVersionDoc(null); }}
         document={versionDoc}
         onVersionChange={() => { fetchDocuments(); fetchStats(); }}
+      />
+      <CompareMetadataModal
+        isOpen={isCompareOpen}
+        onClose={() => setIsCompareOpen(false)}
+        data={compareData}
       />
     </div>
   );
