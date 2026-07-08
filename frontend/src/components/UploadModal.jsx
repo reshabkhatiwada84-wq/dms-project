@@ -123,7 +123,7 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg glass-panel rounded-2xl shadow-2xl overflow-hidden border border-white/10 relative animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-lg glass-panel rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] border border-white/10 relative animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <h3 className="text-lg font-bold text-white">Upload New Document</h3>

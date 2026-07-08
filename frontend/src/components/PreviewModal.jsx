@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, API_URL } from '../context/AuthContext';
 import { X, Download, FileText, AlertCircle } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 // ─────────────────────────────────────────────
 // DOCX renderer helper
@@ -24,6 +25,71 @@ const DocxRenderer = ({ blob, onError }) => {
       ref={containerRef}
       className="w-full h-[60vh] overflow-auto bg-white rounded-xl p-4 text-black docx-container"
     />
+  );
+};
+
+// ─────────────────────────────────────────────
+// XLSX renderer helper
+// ─────────────────────────────────────────────
+const XlsxRenderer = ({ blob, onError }) => {
+  const [data, setData] = useState([]);
+  const [columns, setColumns] = useState([]);
+
+  useEffect(() => {
+    if (!blob) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert sheet to array of arrays (header: 1)
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (jsonData.length > 0) {
+          setColumns(jsonData[0] || []);
+          setData(jsonData.slice(1) || []);
+        }
+      } catch (err) {
+        console.error('xlsx error:', err);
+        if (onError) onError('Failed to parse Excel file preview');
+      }
+    };
+    reader.readAsArrayBuffer(blob);
+  }, [blob, onError]);
+
+  return (
+    <div className="w-full h-[60vh] overflow-auto bg-slate-900 rounded-xl border border-white/10 custom-scrollbar p-2">
+      <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
+        <thead className="sticky top-0 bg-slate-950 shadow-md">
+          <tr>
+            {columns.map((col, i) => (
+              <th key={i} className="px-4 py-3 font-semibold text-slate-200 border-b border-white/10 uppercase tracking-wider text-xs">
+                {col || ''}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {data.map((row, rowIndex) => (
+            <tr key={rowIndex} className="hover:bg-white/5 transition-colors">
+              {columns.map((_, colIndex) => (
+                <td key={colIndex} className="px-4 py-3 truncate max-w-[300px]" title={row[colIndex] || ''}>
+                  {row[colIndex] !== undefined && row[colIndex] !== null ? String(row[colIndex]) : ''}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {data.length === 0 && columns.length === 0 && (
+            <tr>
+              <td className="px-4 py-8 text-center text-slate-500 italic">No data found in spreadsheet</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 };
 
@@ -56,6 +122,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
         const isPdf    = mime === 'application/pdf';
         const isVideo  = mime.startsWith('video/');
         const isDocx   = mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        const isXlsx   = mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel' || document.originalName?.endsWith('.xlsx') || document.originalName?.endsWith('.xls');
 
         if (isPdf || isVideo) {
           const token = localStorage.getItem('token');
@@ -74,6 +141,9 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
         } else if (isDocx) {
           const res = await api.get(`/api/documents/download/${document._id}`, { responseType: 'blob' });
           setDocxBlob(res.data);
+        } else if (isXlsx) {
+          const res = await api.get(`/api/documents/download/${document._id}`, { responseType: 'blob' });
+          setDocxBlob(res.data); // We can reuse the docxBlob state to hold the xlsx Blob for simplicity
         }
       } catch (err) {
         console.error(err);
@@ -116,6 +186,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   const isPdf   = mime === 'application/pdf';
   const isText  = mime.startsWith('text/') || ['application/json', 'application/javascript'].includes(mime);
   const isDocx  = mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const isXlsx  = mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel' || document.originalName?.endsWith('.xlsx') || document.originalName?.endsWith('.xls');
 
   // ══════════════════════════════════════════════════════════════════════════
   // VIDEO — dedicated fullscreen modal WITHOUT any overflow/scroll container
@@ -247,6 +318,10 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
 
     if (isDocx && docxBlob) {
       return <DocxRenderer blob={docxBlob} onError={setError} />;
+    }
+
+    if (isXlsx && docxBlob) {
+      return <XlsxRenderer blob={docxBlob} onError={setError} />;
     }
 
     return (
