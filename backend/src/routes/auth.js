@@ -240,9 +240,10 @@ router.put('/profile-photo', protect, profileUpload.single('profilePhoto'), asyn
       };
     } catch (cloudErr) {
       console.warn('[ProfilePhoto] Cloudinary upload failed, using local storage:', cloudErr.message);
-      // Fallback to local storage
+      // Fallback to local storage — use full backend URL so it works on any server, not just localhost
+      const backendUrl = process.env.BACKEND_URL || '';
       user.profilePhoto = {
-        url: `/uploads/${req.file.filename}`,
+        url: `${backendUrl}/uploads/${req.file.filename}`,
         publicId: null,
         fileName: req.file.filename,
       };
