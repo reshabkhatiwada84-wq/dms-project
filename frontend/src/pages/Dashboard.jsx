@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext, api } from '../context/AuthContext';
 import UploadModal from '../components/UploadModal';
 import PreviewModal from '../components/PreviewModal';
@@ -8,7 +9,7 @@ import VersionHistoryModal from '../components/VersionHistoryModal';
 import ShareModal from '../components/ShareModal';
 import CompareMetadataModal from '../components/CompareMetadataModal';
 import {
-  Download, FileText, Search, Trash2, Upload, AlertCircle,
+  Download, FileText, Search, Trash2, Upload, AlertCircle, X,
   HardDrive, BarChart2, Clock, TrendingUp, FolderOpen, CheckCircle2, Activity, Share2, FolderInput, History, GitBranch, Star
 } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
@@ -65,7 +66,7 @@ const DonutChart = ({ breakdown, total }) => {
     const pct = total > 0 ? count / total : 0;
     const startAngle = cumulativeAngle;
     cumulativeAngle += pct * 360;
-    return { cat, count, pct, startAngle, endAngle: cumulativeAngle, color: colors[cat] };
+    return { cat, count, pct, startAngle, endAngle: cumulativeAngle, color: colors[cat] || '#0ea5e9' };
   });
 
   const describeArc = (start, end) => {
@@ -132,6 +133,9 @@ const StatCard = ({ icon: Icon, label, value, color, gradient, sub }) => (
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 const Dashboard = () => {
   const { user } = useContext(AuthContext);
+  const { userId } = useParams();
+  const navigate = useNavigate();
+  const isReadOnly = !!userId;
   const [documents, setDocuments] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +143,7 @@ const Dashboard = () => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState('');
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [error, setError] = useState('');
@@ -163,12 +168,25 @@ const Dashboard = () => {
   const [versionDoc, setVersionDoc] = useState(null);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
 
-  const categories = ['All', 'Invoice', 'Contract', 'Resume', 'Report', 'Other'];
+  const [categories, setCategories] = useState(['All', 'Invoice', 'Contract', 'Resume', 'Report']);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const params = userId ? { targetUserId: userId } : {};
+      const res = await api.get('/api/documents/categories', { params });
+      if (res.data && res.data.length > 0) {
+        setCategories(['All', ...res.data]);
+      }
+    } catch (err) {
+      console.error('Categories fetch error:', err);
+    }
+  }, []);
 
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      const res = await api.get('/api/documents/stats');
+      const params = userId ? { targetUserId: userId } : {};
+      const res = await api.get('/api/documents/stats', { params });
       setStats(res.data);
     } catch (err) {
       console.error('Stats fetch error:', err);
@@ -179,7 +197,8 @@ const Dashboard = () => {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await api.get('/api/folders');
+      const params = userId ? { targetUserId: userId } : {};
+      const res = await api.get('/api/folders', { params });
       setFolders(res.data);
     } catch (err) {
       console.error('Folders fetch error:', err);
@@ -191,6 +210,8 @@ const Dashboard = () => {
     setError('');
     try {
       const params = { search, category: selectedCategory };
+      if (userId) params.targetUserId = userId;
+      if (selectedFormat) params.format = selectedFormat;
       if (selectedFolder === 'none') params.folder = 'none';
       else if (selectedFolder !== 'all') params.folder = selectedFolder;
       const res = await api.get('/api/documents', { params });
@@ -202,7 +223,7 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, selectedCategory, selectedFolder]);
+  }, [search, selectedCategory, selectedFolder, selectedFormat]);
 
   useEffect(() => {
     fetchStats();
@@ -211,6 +232,10 @@ const Dashboard = () => {
   useEffect(() => {
     fetchFolders();
   }, [fetchFolders]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   useEffect(() => {
     const t = setTimeout(fetchDocuments, 300);
@@ -442,6 +467,23 @@ const Dashboard = () => {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 animate-in fade-in duration-300 relative">
       
+      {/* Impersonation Banner */}
+      {isReadOnly && (
+        <div className="mb-6 bg-amber-500/20 border border-amber-500/30 px-6 py-3 rounded-xl flex items-center justify-between z-10 relative">
+          <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+            <Activity className="h-4 w-4" />
+            <span>Admin View: You are in READ-ONLY mode viewing another user's dashboard</span>
+          </div>
+          <button 
+            onClick={() => navigate('/admin')}
+            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+            Exit View
+          </button>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl border border-white/10 flex items-center space-x-3 animate-in slide-in-from-bottom-5">
@@ -462,13 +504,15 @@ const Dashboard = () => {
               : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! Here's your document overview.`}
           </p>
         </div>
-        <button
-          onClick={() => setIsUploadOpen(true)}
-          className="flex items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-sky-500/20 hover:brightness-110 active:scale-95 transition-all self-start md:self-auto"
-        >
-          <Upload className="h-5 w-5" />
-          <span>Upload File</span>
-        </button>
+        {!isReadOnly && (
+          <button
+            onClick={() => setIsUploadOpen(true)}
+            className="flex items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-sky-500/20 hover:brightness-110 active:scale-95 transition-all self-start md:self-auto"
+          >
+            <Upload className="h-5 w-5" />
+            <span>Upload File</span>
+          </button>
+        )}
       </div>
 
       {/* ── Tab Nav ── */}
@@ -693,7 +737,7 @@ const Dashboard = () => {
                   return (
                     <div key={cat}
                       onClick={() => { setActiveTab('documents'); setSelectedCategory(cat); }}
-                      className={`flex items-center justify-between rounded-xl border bg-gradient-to-r px-4 py-2.5 cursor-pointer hover:brightness-110 transition-all ${colorMap[cat]}`}
+                      className={`flex items-center justify-between rounded-xl border bg-gradient-to-r px-4 py-2.5 cursor-pointer hover:brightness-110 transition-all ${colorMap[cat] || 'from-sky-500/10 to-transparent border-sky-500/20 text-sky-400'}`}
                     >
                       <span className="text-sm font-semibold">{cat}</span>
                       <div className="flex items-center gap-2">
@@ -705,6 +749,40 @@ const Dashboard = () => {
                 })}
                 {Object.values(stats?.categoryBreakdown || {}).every(v => v === 0) && (
                   <p className="text-center text-slate-500 text-sm py-4">Upload documents to see category status</p>
+                )}
+              </div>
+            </div>
+
+            {/* Document Formats Widget */}
+            <div className="glass-panel rounded-2xl border border-white/5 shadow-xl overflow-hidden mt-6">
+              <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">File Formats</h3>
+              </div>
+              <div className="p-5 space-y-3">
+                {Object.entries(stats?.typeBreakdown || {}).map(([typeLabel, count]) => {
+                  let badgeColor = 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+                  if (typeLabel === 'PDF') badgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+                  else if (typeLabel.includes('DOCX')) badgeColor = 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+                  else if (typeLabel.includes('XLSX')) badgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                  else if (typeLabel.includes('PPTX')) badgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+                  else if (typeLabel === 'Image') badgeColor = 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+                  else if (typeLabel === 'Video') badgeColor = 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+
+                  return (
+                    <div key={typeLabel} 
+                      onClick={() => { setActiveTab('documents'); setSelectedFormat(typeLabel); }}
+                      className="flex items-center justify-between rounded-xl border bg-gradient-to-r px-4 py-2.5 cursor-pointer hover:brightness-110 transition-all border-slate-700 hover:border-slate-600 bg-white/5"
+                    >
+                      <span className="text-sm font-semibold text-slate-300">{typeLabel}</span>
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${badgeColor}`}>
+                        {count} files
+                      </span>
+                    </div>
+                  );
+                })}
+                {Object.keys(stats?.typeBreakdown || {}).length === 0 && (
+                  <p className="text-center text-slate-500 text-sm py-2">No files yet</p>
                 )}
               </div>
             </div>
@@ -754,9 +832,20 @@ const Dashboard = () => {
                     {cat}
                   </button>
                 ))}
+                {selectedFormat && (
+                  <div className="flex items-center gap-2 ml-4 pl-4 border-l border-white/10">
+                    <span className="text-xs text-slate-400">Format:</span>
+                    <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      {selectedFormat}
+                      <button onClick={() => setSelectedFormat('')} className="hover:text-white transition-colors ml-1">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* Bulk Actions */}
-              {documents.length > 0 && (
+              {!isReadOnly && documents.length > 0 && (
                 <div className="flex items-center gap-3 mt-4 sm:mt-0">
                   <button
                     onClick={handleSelectAll}
@@ -847,13 +936,15 @@ const Dashboard = () => {
                           {doc.originalName?.split('.').pop().toUpperCase() || 'FILE'}
                         </span>
                       </div>
-                      <button 
-                        onClick={(e) => handleToggleFavorite(e, doc)} 
-                        className={`${isFavorite ? 'text-yellow-400' : 'text-slate-400'} hover:text-yellow-400 transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-full border border-white/5`}
-                        title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-                      >
-                        <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-400' : ''}`} />
-                      </button>
+                      {!isReadOnly && (
+                        <button 
+                          onClick={(e) => handleToggleFavorite(e, doc)} 
+                          className={`${isFavorite ? 'text-yellow-400' : 'text-slate-400'} hover:text-yellow-400 transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-full border border-white/5`}
+                          title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                        >
+                          <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-400' : ''}`} />
+                        </button>
+                      )}
                     </div>
                     <h4 className="text-base font-bold text-white group-hover:text-sky-400 transition-colors truncate mb-1">{doc.title}</h4>
                     <p className="text-xs text-slate-400 line-clamp-2 mb-2 h-8">{doc.description || 'No description provided.'}</p>
@@ -890,26 +981,30 @@ const Dashboard = () => {
                         <Download className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Download</span>
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleShare(doc); }}
-                        title="Share" className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
-                        <Share2 className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Share</span>
-                      </button>
+                      {!isReadOnly && (
+                        <button onClick={(e) => { e.stopPropagation(); handleShare(doc); }}
+                          title="Share" className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
+                          <Share2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); setVersionDoc(doc); setIsVersionOpen(true); }}
-                        title="Version History" className="p-1.5 rounded-lg text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 transition-colors">
-                        <History className="h-4 w-4" />
-                      </button>
-                      <button onClick={(e) => handleOpenMove(e, doc)}
-                        title="Move to Folder" className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors">
-                        <FolderInput className="h-4 w-4" />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(doc._id); }}
-                        title="Delete" className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {!isReadOnly && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={(e) => { e.stopPropagation(); setVersionDoc(doc); setIsVersionOpen(true); }}
+                          title="Version History" className="p-1.5 rounded-lg text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 transition-colors">
+                          <History className="h-4 w-4" />
+                        </button>
+                        <button onClick={(e) => handleOpenMove(e, doc)}
+                          title="Move to Folder" className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors">
+                          <FolderInput className="h-4 w-4" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(doc._id); }}
+                          title="Delete" className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )})}

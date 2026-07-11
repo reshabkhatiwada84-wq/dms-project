@@ -37,7 +37,18 @@ const Favorites = () => {
   // Toast state
   const [toastMessage, setToastMessage] = useState('');
 
-  const categories = ['All', 'Invoice', 'Contract', 'Resume', 'Report', 'Other'];
+  const [categories, setCategories] = useState(['All', 'Invoice', 'Contract', 'Resume', 'Report']);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await api.get('/api/documents/categories');
+      if (res.data && res.data.length > 0) {
+        setCategories(['All', ...res.data]);
+      }
+    } catch (err) {
+      console.error('Categories fetch error:', err);
+    }
+  }, []);
 
   const fetchFavorites = useCallback(async () => {
     setLoading(true);
@@ -53,6 +64,10 @@ const Favorites = () => {
       setLoading(false);
     }
   }, [search, selectedCategory]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   useEffect(() => {
     const t = setTimeout(fetchFavorites, 300);

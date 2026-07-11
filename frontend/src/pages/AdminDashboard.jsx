@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AuthContext, api } from '../context/AuthContext';
-import { Users, FileText, HardDrive, ShieldAlert, Trash2, ArrowLeftRight, Plus, X } from 'lucide-react';
+import { Users, FileText, HardDrive, ShieldAlert, Trash2, ArrowLeftRight, Plus, X, Eye } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
 
 const getRoleDisplay = (role) => {
@@ -18,6 +19,7 @@ const getRoleDisplay = (role) => {
 
 const AdminDashboard = () => {
   const { user: currentUser } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -222,6 +224,8 @@ const AdminDashboard = () => {
         </div>
       </div>
 
+
+
       <div className="mb-6 flex items-center justify-between">
         <h3 className="text-xl font-bold text-white">Account Management</h3>
         {currentUser?.role === 'superadmin' && (
@@ -267,8 +271,21 @@ const AdminDashboard = () => {
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
+                    <div className="flex justify-end gap-2">
+                      {/* View Dashboard — visible for all users except yourself */}
+                      {u._id !== currentUser?._id && (
+                        (currentUser?.role === 'superadmin' || (currentUser?.role === 'admin' && u.role === 'user')) && (
+                          <button
+                            onClick={() => navigate(`/admin/view-user/${u._id}`)}
+                            title="View Dashboard"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                          >
+                            <Eye className="h-4.5 w-4.5" />
+                          </button>
+                        )
+                      )}
                     {canModifyUser(u) ? (
-                      <div className="flex justify-end gap-2">
+                      <>
                         <button
                           onClick={() => handleToggleRole(u)}
                           title={u.role === 'admin' ? 'Remove Admin Rights' : 'Make Admin'}
@@ -283,12 +300,13 @@ const AdminDashboard = () => {
                         >
                           <Trash2 className="h-4.5 w-4.5" />
                         </button>
-                      </div>
+                      </>
                     ) : (
                       <span className="text-[10px] text-slate-500 uppercase font-semibold">
                         {u._id === currentUser?._id ? 'Current User' : 'Cannot Modify'}
                       </span>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}

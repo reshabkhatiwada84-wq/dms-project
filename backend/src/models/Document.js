@@ -31,7 +31,7 @@ const documentSchema = mongoose.Schema(
     category: {
       type: String,
       required: [true, 'Please select a category'],
-      enum: ['Invoice', 'Contract', 'Resume', 'Report', 'Other'],
+      trim: true,
     },
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -59,6 +59,10 @@ const documentSchema = mongoose.Schema(
       type: String,
       enum: ['view', 'edit'],
       default: 'view',
+    },
+    fileHash: {
+      type: String,
+      required: false, // Not required for backward compatibility with older documents
     },
     folder: {
       type: mongoose.Schema.Types.ObjectId,

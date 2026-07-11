@@ -36,6 +36,16 @@ function App() {
                 }
               />
 
+              {/* Admin Impersonation Route */}
+              <Route
+                path="/admin/view-user/:userId"
+                element={
+                  <ProtectedRoute adminOnly>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Trash Route */}
               <Route
                 path="/trash"

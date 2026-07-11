@@ -7,7 +7,28 @@ const multer = require('multer');
 const Document = require('../models/Document');
 const Version = require('../models/Version');
 const Activity = require('../models/Activity');
+const User = require('../models/User');
 const { protect } = require('../middleware/auth');
+
+// Helper to handle impersonation queries
+const getTargetUserQuery = async (req) => {
+  let query = { isDeleted: { $ne: true } };
+  
+  if (req.query.targetUserId && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
+    const targetUser = await User.findById(req.query.targetUserId);
+    if (!targetUser) throw new Error('Target user not found');
+    
+    if (req.user.role === 'admin' && (targetUser.role === 'admin' || targetUser.role === 'superadmin')) {
+      throw new Error('Not authorized to view this dashboard');
+    }
+    
+    query.uploadedBy = req.query.targetUserId;
+  } else if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    query.uploadedBy = req.user._id;
+  }
+  
+  return query;
+};
 
 const { uploadToCloudinary } = require('../config/cloudinary');
 const https = require('https');
@@ -17,6 +38,30 @@ const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+const getFileTypeLabel = (mimeType, filename) => {
+  if (!mimeType) return 'Other';
+  if (mimeType === 'application/pdf') return 'PDF';
+  if (mimeType.includes('wordprocessingml') || mimeType === 'application/msword') return 'DOCX / DOC';
+  if (mimeType.includes('spreadsheetml') || mimeType === 'application/vnd.ms-excel') return 'XLSX / XLS';
+  if (mimeType.includes('presentationml') || mimeType === 'application/vnd.ms-powerpoint') return 'PPTX / PPT';
+  if (mimeType.startsWith('image/')) return 'Image';
+  if (mimeType.startsWith('video/')) return 'Video';
+  if (mimeType.startsWith('audio/')) return 'Audio';
+  if (mimeType.includes('text/plain')) return 'Text';
+  if (mimeType.includes('csv')) return 'CSV';
+  if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('tar')) return 'Archive';
+  
+  // fallback by extension
+  if (filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    if (['pdf'].includes(ext)) return 'PDF';
+    if (['doc', 'docx'].includes(ext)) return 'DOCX / DOC';
+    if (['xls', 'xlsx'].includes(ext)) return 'XLSX / XLS';
+    if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(ext)) return 'Image';
+  }
+  return 'Other';
+};
 
 // Multer storage configuration - save to disk first
 const storage = multer.diskStorage({
@@ -58,6 +103,29 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'Title and category are required' });
     }
 
+    // ── SHA-256 hash generation ────────────
+    let generatedHash = null;
+    try {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      generatedHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      console.log('[Upload] Generated file hash:', generatedHash);
+    } catch (e) {
+      return res.status(500).json({ message: 'Failed to generate file hash. Upload cancelled.' });
+    }
+
+    // ── Check for duplicate content in existing documents ────────────
+    const existingDoc = await Document.findOne({ 
+      fileHash: generatedHash, 
+      isDeleted: { $ne: true },
+      uploadedBy: req.user._id // Only check same user's docs? Or all? User can decide. Let's check all for now.
+    });
+    if (existingDoc) {
+      console.log('[Upload] Duplicate document found!');
+      return res.status(409).json({ 
+        message: 'A document with the exact same content already exists in the system.' 
+      });
+    }
+
     let cloudResult = null;
     // Try to upload to Cloudinary first
     try {
@@ -82,6 +150,7 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       category,
       uploadedBy: req.user._id,
       filePath: req.file.filename, // Always store local filename
+      fileHash: generatedHash,
     };
 
     // If Cloudinary upload succeeded, add cloudinary fields
@@ -93,15 +162,6 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
 
     console.log('[Upload] Creating document with data:', docData);
     const document = await Document.create(docData);
-
-    // Auto-create v1 Version record so the original file is always tracked
-    let v1Hash = null;
-    try {
-      const fileBuffer = fs.readFileSync(req.file.path);
-      v1Hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-    } catch (e) {
-      // Non-critical: hash generation failure shouldn't block upload
-    }
 
     // Prepare version data
     const versionData = {
@@ -115,7 +175,7 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       uploadDate: new Date(),
       expiryDate: null,
       isCurrentVersion: true,
-      fileHash: v1Hash,
+      fileHash: generatedHash,
       filePath: req.file.filename, // Always store local filename for backup
       actionLog: [{ action: 'uploaded', performedBy: req.user._id }],
     };
@@ -145,14 +205,41 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
   }
 });
 
+// @desc    Get all unique categories
+// @route   GET /api/documents/categories
+// @access  Private
+router.get('/categories', protect, async (req, res) => {
+  try {
+    let query;
+    try {
+      query = await getTargetUserQuery(req);
+    } catch (e) {
+      return res.status(403).json({ message: e.message });
+    }
+
+    const categories = await Document.distinct('category', query);
+
+    // Always include the defaults, plus any custom ones
+    const defaults = ['Invoice', 'Contract', 'Resume', 'Report'];
+    const merged = [...new Set([...defaults, ...categories])];
+
+    res.json(merged.sort());
+  } catch (error) {
+    console.error('Categories fetch error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // @desc    Get dashboard stats for current user
 // @route   GET /api/documents/stats
 // @access  Private
 router.get('/stats', protect, async (req, res) => {
   try {
-    let query = { isDeleted: { $ne: true } };
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-      query.uploadedBy = req.user._id;
+    let query;
+    try {
+      query = await getTargetUserQuery(req);
+    } catch (e) {
+      return res.status(403).json({ message: e.message });
     }
 
     const allDocs = await Document.find(query)
@@ -162,13 +249,19 @@ router.get('/stats', protect, async (req, res) => {
     // Basic counts
     const totalDocuments = allDocs.length;
     let totalStorage = 0;
-    const categoryBreakdown = { Invoice: 0, Contract: 0, Resume: 0, Report: 0, Other: 0 };
+    const categoryBreakdown = {};
+    const typeBreakdown = {};
 
     allDocs.forEach(doc => {
       totalStorage += doc.size || 0;
-      if (categoryBreakdown.hasOwnProperty(doc.category)) {
-        categoryBreakdown[doc.category]++;
-      }
+      
+      // Category Breakdown
+      const cat = doc.category || 'Other';
+      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
+
+      // Type Breakdown
+      const typeLabel = getFileTypeLabel(doc.mimeType, doc.originalName || doc.filename);
+      typeBreakdown[typeLabel] = (typeBreakdown[typeLabel] || 0) + 1;
     });
 
     // Recent uploads (last 5)
@@ -221,6 +314,7 @@ router.get('/stats', protect, async (req, res) => {
       totalDocuments,
       totalStorage,
       categoryBreakdown,
+      typeBreakdown,
       recentUploads,
       activity,
       versionStats: { totalVersions, docsWithMultipleVersions, latestVersion: latestVersionInfo },
@@ -237,10 +331,11 @@ router.get('/', protect, async (req, res) => {
   try {
     const { search, category } = req.query;
     
-    let query = { isDeleted: { $ne: true } };
-    
-    if (req.query.favoritesOnly !== 'true' && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-      query.uploadedBy = req.user._id;
+    let query;
+    try {
+      query = await getTargetUserQuery(req);
+    } catch (e) {
+      return res.status(403).json({ message: e.message });
     }
 
     if (category && category !== 'All') {
@@ -265,10 +360,14 @@ router.get('/', protect, async (req, res) => {
       query.folder = req.query.folder;
     }
 
-    const documents = await Document.find(query)
+    let documents = await Document.find(query)
       .populate('uploadedBy', 'name email')
       .populate('folder', 'name')
       .sort({ createdAt: -1 });
+
+    if (req.query.format) {
+      documents = documents.filter(doc => getFileTypeLabel(doc.mimeType, doc.originalName || doc.filename) === req.query.format);
+    }
 
     res.json(documents);
   } catch (error) {
@@ -637,8 +736,24 @@ router.post('/public/:shareToken/upload', upload.single('file'), async (req, res
     try {
       const fileBuffer = fs.readFileSync(req.file.path);
       vHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      console.log('[Public Share Upload] Generated file hash:', vHash);
+
+      // Check for duplicates in existing versions of this document
+      const allVersions = await Version.find({ 
+        documentId: document._id, 
+        isDeleted: { $ne: true },
+        fileHash: { $ne: null }
+      });
+      
+      const duplicateVersion = allVersions.find(version => version.fileHash === vHash);
+      if (duplicateVersion) {
+        console.log('[Public Share Upload] Duplicate content found in version:', duplicateVersion.versionNumber);
+        return res.status(409).json({
+          message: `No changes detected. This file content is identical to version ${duplicateVersion.versionNumber}.`,
+        });
+      }
     } catch (e) {
-      // Non-critical
+      console.warn('[Public Share Upload] Hash generation failed:', e.message);
     }
 
     // Prepare version data

@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../context/AuthContext';
 
-import { UploadCloud, X, Folder } from 'lucide-react';
+import { UploadCloud, X, Folder, Plus } from 'lucide-react';
 
 const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFolderId = '' }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Invoice');
+  const [customCategory, setCustomCategory] = useState('');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [availableCategories, setAvailableCategories] = useState(['Invoice', 'Contract', 'Resume', 'Report']);
   const [folderId, setFolderId] = useState(defaultFolderId);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -18,6 +21,14 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
     if (isOpen) {
       setFolderId(defaultFolderId);
       setDragActive(false);
+      // Fetch available categories
+      api.get('/api/documents/categories')
+        .then(res => {
+          if (res.data && res.data.length > 0) {
+            setAvailableCategories(res.data);
+          }
+        })
+        .catch(err => console.error('Failed to fetch categories:', err));
     }
   }, [defaultFolderId, isOpen]);
 
@@ -110,6 +121,8 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
       setTitle('');
       setDescription('');
       setCategory('Invoice');
+      setCustomCategory('');
+      setIsCustomCategory(false);
       setFolderId(defaultFolderId);
       setFile(null);
       onUploadSuccess();
@@ -215,16 +228,43 @@ const UploadModal = ({ isOpen, onClose, onUploadSuccess, folders = [], defaultFo
             </label>
             <select
               id="doc-category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              value={isCustomCategory ? '__custom__' : category}
+              onChange={(e) => {
+                if (e.target.value === '__custom__') {
+                  setIsCustomCategory(true);
+                  setCategory('');
+                } else {
+                  setIsCustomCategory(false);
+                  setCategory(e.target.value);
+                  setCustomCategory('');
+                }
+              }}
               className="glass-input mt-1 block w-full rounded-xl py-3 px-3 text-sm bg-slate-900 cursor-pointer"
             >
-              <option value="Invoice">Invoice</option>
-              <option value="Contract">Contract</option>
-              <option value="Resume">Resume</option>
-              <option value="Report">Report</option>
-              <option value="Other">Other</option>
+              {availableCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+              <option value="__custom__">＋ New Category...</option>
             </select>
+            {isCustomCategory && (
+              <div className="relative mt-2">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Plus className="h-4 w-4" />
+                </div>
+                <input
+                  type="text"
+                  value={customCategory}
+                  onChange={(e) => {
+                    setCustomCategory(e.target.value);
+                    setCategory(e.target.value);
+                  }}
+                  className="glass-input block w-full rounded-xl py-2.5 pl-9 pr-3 text-sm"
+                  placeholder="Type your custom category name..."
+                  autoFocus
+                  required
+                />
+              </div>
+            )}
           </div>
 
           {/* Folder selector */}

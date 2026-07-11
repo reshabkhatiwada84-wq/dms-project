@@ -1,23 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, API_URL } from '../context/AuthContext';
-import { X, Download, FileText, AlertCircle } from 'lucide-react';
+import { X, Download, FileText, AlertCircle, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // ─────────────────────────────────────────────
-// DOCX renderer helper
+// DOCX renderer helper with retry logic
 // ─────────────────────────────────────────────
 const DocxRenderer = ({ blob, onError }) => {
   const containerRef = useRef(null);
+  const renderAttemptedRef = useRef(false);
 
   useEffect(() => {
-    if (containerRef.current && blob) {
-      import('docx-preview').then(docx => {
-        docx.renderAsync(blob, containerRef.current).catch(err => {
-          console.error('docx error:', err);
-          if (onError) onError('Failed to render Word document preview');
-        });
-      });
-    }
+    if (!containerRef.current || !blob) return;
+
+    // Clear previous content before rendering
+    containerRef.current.innerHTML = '';
+    renderAttemptedRef.current = false;
+
+    const renderDocx = async () => {
+      if (renderAttemptedRef.current) return;
+      renderAttemptedRef.current = true;
+
+      try {
+        const docx = await import('docx-preview');
+        await docx.renderAsync(blob, containerRef.current);
+      } catch (err) {
+        console.error('docx error:', err);
+        if (onError) onError('Failed to render Word document preview');
+      }
+    };
+
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(renderDocx, 100);
+    return () => clearTimeout(timer);
   }, [blob, onError]);
 
   return (
@@ -37,6 +52,9 @@ const XlsxRenderer = ({ blob, onError }) => {
 
   useEffect(() => {
     if (!blob) return;
+    setData([]);
+    setColumns([]);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -45,7 +63,6 @@ const XlsxRenderer = ({ blob, onError }) => {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Convert sheet to array of arrays (header: 1)
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         
         if (jsonData.length > 0) {
@@ -100,20 +117,38 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   const [loading, setLoading]       = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [textContent, setTextContent] = useState('');
-  const [docxBlob, setDocxBlob]     = useState(null);
+  const [fileBlob, setFileBlob]     = useState(null);
   const [error, setError]           = useState('');
+  const [retryKey, setRetryKey]     = useState(0);
   const videoRef                    = useRef(null);
 
-  // Load preview data whenever the modal opens
+  // Reset ALL state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setLoading(false);
+      setError('');
+      setPreviewUrl('');
+      setTextContent('');
+      setFileBlob(null);
+    }
+  }, [isOpen]);
+
+  // Load preview data whenever modal opens or retryKey changes
   useEffect(() => {
     if (!isOpen || !document) return;
 
     const loadPreview = async () => {
       setLoading(true);
       setError('');
+      
+      // Clean up previous resources
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      
       setPreviewUrl('');
       setTextContent('');
-      setDocxBlob(null);
+      setFileBlob(null);
 
       try {
         const mime     = document.mimeType || '';
@@ -138,15 +173,12 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
         } else if (isText) {
           const res = await api.get(`/api/documents/download/${document._id}`, { responseType: 'text' });
           setTextContent(res.data);
-        } else if (isDocx) {
+        } else if (isDocx || isXlsx) {
           const res = await api.get(`/api/documents/download/${document._id}`, { responseType: 'blob' });
-          setDocxBlob(res.data);
-        } else if (isXlsx) {
-          const res = await api.get(`/api/documents/download/${document._id}`, { responseType: 'blob' });
-          setDocxBlob(res.data); // We can reuse the docxBlob state to hold the xlsx Blob for simplicity
+          setFileBlob(res.data);
         }
       } catch (err) {
-        console.error(err);
+        console.error('Preview load error:', err);
         setError('Failed to load file preview');
       } finally {
         setLoading(false);
@@ -156,11 +188,17 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
     loadPreview();
 
     return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
     };
-  }, [isOpen, document]);
+  }, [isOpen, document, retryKey]);
 
   if (!isOpen || !document) return null;
+
+  const handleRetry = () => {
+    setRetryKey(prev => prev + 1);
+  };
 
   // ── Download handler ─────────────────────────────────────────────────────
   const handleDownload = async () => {
@@ -189,9 +227,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   const isXlsx  = mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel' || document.originalName?.endsWith('.xlsx') || document.originalName?.endsWith('.xls');
 
   // ══════════════════════════════════════════════════════════════════════════
-  // VIDEO — dedicated fullscreen modal WITHOUT any overflow/scroll container
-  // This is critical: overflow-y-auto on a parent div intercepts pointer
-  // events on the native seekbar, making it impossible to drag/seek.
+  // VIDEO — dedicated fullscreen modal
   // ══════════════════════════════════════════════════════════════════════════
   if (isVideo) {
     return (
@@ -212,19 +248,30 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
           </button>
         </div>
 
-        {/* Video player — flex-1 so it fills remaining space, no overflow clipping */}
+        {/* Video player */}
         <div className="flex-1 flex items-center justify-center px-6 py-4" style={{ minHeight: 0 }}>
           {loading && (
-            <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-t-2 border-sky-500" />
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-t-2 border-sky-500" />
+              <p className="text-slate-400 text-sm">Loading video...</p>
+            </div>
           )}
           {error && (
-            <div className="flex flex-col items-center gap-2 text-center">
+            <div className="flex flex-col items-center gap-4 text-center">
               <AlertCircle className="h-12 w-12 text-rose-400" />
               <p className="text-slate-300">{error}</p>
+              <button
+                onClick={handleRetry}
+                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-white font-medium transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Try Again</span>
+              </button>
             </div>
           )}
           {!loading && !error && previewUrl && (
             <video
+              key={retryKey}
               ref={videoRef}
               src={previewUrl}
               controls
@@ -266,22 +313,30 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // All other file types — standard scrollable modal
+  // All other file types
   // ══════════════════════════════════════════════════════════════════════════
   const renderPreview = () => {
     if (loading) {
       return (
-        <div className="flex h-[45vh] items-center justify-center">
+        <div className="flex flex-col items-center justify-center h-[45vh] gap-2">
           <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-t-2 border-sky-500" />
+          <p className="text-slate-400 text-sm">Loading preview...</p>
         </div>
       );
     }
 
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center h-[35vh] text-center">
-          <AlertCircle className="h-12 w-12 text-rose-400 mb-2" />
+        <div className="flex flex-col items-center justify-center h-[45vh] text-center gap-4">
+          <AlertCircle className="h-12 w-12 text-rose-400" />
           <p className="text-slate-300 font-semibold">{error}</p>
+          <button
+            onClick={handleRetry}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-white font-medium transition-colors"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Try Again</span>
+          </button>
         </div>
       );
     }
@@ -290,6 +345,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
       return (
         <div className="flex justify-center p-2 bg-slate-950/20 rounded-xl">
           <img
+            key={retryKey}
             src={previewUrl}
             alt={document.title}
             className="max-h-[55vh] max-w-full object-contain rounded-lg shadow-lg border border-white/5"
@@ -301,6 +357,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
     if (isPdf && previewUrl) {
       return (
         <iframe
+          key={retryKey}
           src={previewUrl}
           title={document.title}
           className="w-full h-[60vh] rounded-xl border border-white/10 bg-slate-900"
@@ -316,12 +373,12 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
       );
     }
 
-    if (isDocx && docxBlob) {
-      return <DocxRenderer blob={docxBlob} onError={setError} />;
+    if (isDocx && fileBlob) {
+      return <DocxRenderer key={retryKey} blob={fileBlob} onError={setError} />;
     }
 
-    if (isXlsx && docxBlob) {
-      return <XlsxRenderer blob={docxBlob} onError={setError} />;
+    if (isXlsx && fileBlob) {
+      return <XlsxRenderer key={retryKey} blob={fileBlob} onError={setError} />;
     }
 
     return (

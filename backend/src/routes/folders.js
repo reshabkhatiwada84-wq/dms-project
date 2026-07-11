@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Folder = require('../models/Folder');
 const Document = require('../models/Document');
+const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 
 router.use(protect);
@@ -11,7 +12,18 @@ router.use(protect);
 // @access  Private
 router.get('/', async (req, res) => {
   try {
-    const query = (req.user.role === 'admin' || req.user.role === 'superadmin') ? {} : { owner: req.user._id };
+    let query = {};
+    if (req.query.targetUserId && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
+      const targetUser = await User.findById(req.query.targetUserId);
+      if (!targetUser) return res.status(404).json({ message: 'Target user not found' });
+      if (req.user.role === 'admin' && (targetUser.role === 'admin' || targetUser.role === 'superadmin')) {
+        return res.status(403).json({ message: 'Not authorized to view this dashboard' });
+      }
+      query.owner = req.query.targetUserId;
+    } else if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      query.owner = req.user._id;
+    }
+
     const folders = await Folder.find(query).sort({ name: 1 });
     res.json(folders);
   } catch (error) {

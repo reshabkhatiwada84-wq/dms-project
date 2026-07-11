@@ -79,17 +79,35 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     try {
       const fileBuffer = fs.readFileSync(req.file.path);
       fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      console.log('[Version Upload] Generated file hash:', fileHash);
     } catch (hashErr) {
       return res.status(500).json({ message: 'Failed to generate file hash. Upload cancelled.' });
     }
 
-    // Compare with the latest version's hash to detect duplicates
-    const currentVersion = await Version.findOne({ documentId: doc._id, isCurrentVersion: true });
-    if (currentVersion && currentVersion.fileHash && currentVersion.fileHash === fileHash) {
-      // Identical file — reject
+    // Compare with ALL versions of this document to detect duplicates
+    const allVersions = await Version.find({ 
+      documentId: doc._id, 
+      isDeleted: { $ne: true },
+      fileHash: { $ne: null }
+    });
+    
+    console.log('[Version Upload] Found', allVersions.length, 'versions with hashes');
+    const duplicateVersion = allVersions.find(version => version.fileHash === fileHash);
+    if (duplicateVersion) {
+      console.log('[Version Upload] Duplicate content found in version:', duplicateVersion.versionNumber);
       return res.status(409).json({
-        message: 'No changes detected. This file is identical to the latest version.',
+        message: `No changes detected. This file content is identical to version ${duplicateVersion.versionNumber}.`,
       });
+    }
+
+    // Enterprise Duplicate Check: Check if this exact file content exists on ANY other document
+    if (fileHash) {
+      const duplicateDoc = await Document.findOne({ fileHash: fileHash, isDeleted: { $ne: true }, _id: { $ne: doc._id } });
+      if (duplicateDoc) {
+        return res.status(409).json({
+          message: 'Duplicate document detected. This file already exists in the system.',
+        });
+      }
     }
 
     // Upload to Cloudinary
@@ -147,6 +165,7 @@ router.post('/:documentId', protect, upload.single('file'), async (req, res) => 
     doc.originalName = req.file.originalname;
     doc.mimeType = req.file.mimetype;
     doc.size = req.file.size;
+    doc.fileHash = fileHash;
     if (cloudResult) {
       doc.cloudinaryId = cloudResult.public_id;
       doc.cloudinaryUrl = cloudResult.secure_url;
