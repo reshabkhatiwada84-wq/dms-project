@@ -1,6 +1,6 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, getImageUrl } from '../context/AuthContext';
 import { FolderOpen, LogOut, ShieldAlert, User } from 'lucide-react';
 
 const getRoleDisplay = (role) => {
@@ -86,7 +86,7 @@ const Navbar = () => {
               <div className="h-6 w-6 rounded-full overflow-hidden border border-sky-500/40 flex-shrink-0">
                 {user.profilePhoto?.url ? (
                   <img
-                    src={user.profilePhoto.url}
+                    src={getImageUrl(user.profilePhoto.url)}
                     alt={user.name}
                     className="h-full w-full object-cover"
                   />

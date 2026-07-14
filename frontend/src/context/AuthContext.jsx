@@ -16,6 +16,15 @@ console.log('🔧 API_URL from env or fallback:', API_URL);
 // This prevents accidental requests to the Netlify origin like `/api/...` relative calls.
 export const api = axios.create({ baseURL: API_URL });
 
+export const getImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/uploads')) {
+    return `${API_URL}${url}`;
+  }
+  return url;
+};
+
 // Add an axios interceptor to log every request
 api.interceptors.request.use(
   (config) => {

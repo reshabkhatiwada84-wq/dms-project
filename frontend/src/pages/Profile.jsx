@@ -1,5 +1,5 @@
 import React, { useState, useContext, useRef } from 'react';
-import { AuthContext, api } from '../context/AuthContext';
+import { AuthContext, api, getImageUrl } from '../context/AuthContext';
 import { Camera, Trash2, Upload, X, User, Mail, Shield, Clock } from 'lucide-react';
 
 const Profile = () => {
@@ -109,7 +109,7 @@ const Profile = () => {
             <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-sky-500/30 shadow-lg shadow-sky-500/10">
               {hasPhoto ? (
                 <img
-                  src={user.profilePhoto.url}
+                  src={getImageUrl(user.profilePhoto.url)}
                   alt="Profile"
                   className="w-full h-full object-cover"
                 />

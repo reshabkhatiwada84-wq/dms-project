@@ -242,11 +242,8 @@ router.put('/profile-photo', protect, profileUpload.single('profilePhoto'), asyn
       console.warn('[ProfilePhoto] Cloudinary upload failed, using local storage:', cloudErr.message);
       // Fallback to local storage — dynamically build the URL from the incoming request
       // so it works on any server (localhost, company LAN IP, etc.)
-      const protocol = req.protocol;
-      const host = req.get('host');
-      const baseUrl = `${protocol}://${host}`;
       user.profilePhoto = {
-        url: `${baseUrl}/uploads/${req.file.filename}`,
+        url: `/uploads/${req.file.filename}`,
         publicId: null,
         fileName: req.file.filename,
       };
