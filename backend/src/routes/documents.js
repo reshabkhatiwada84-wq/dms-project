@@ -413,15 +413,14 @@ router.get('/preview/:id', protect, async (req, res) => {
       console.log('[Preview] Using local file fallback');
       let fullPath = null;
       const uploadDir = path.join(__dirname, '../../uploads');
-      
-      // First try filePath (which should always have local filename)
-      if (document.filePath) {
-        fullPath = path.join(uploadDir, document.filePath);
+      // First try filename (updated to latest version)
+      if (document.filename) {
+        fullPath = path.join(uploadDir, document.filename);
       }
       
-      // If not found, try filename
+      // If not found or filename not set (e.g. first version local fallback), try filePath
       if (!fullPath || !fs.existsSync(fullPath)) {
-        if (document.filename) fullPath = path.join(uploadDir, document.filename);
+        if (document.filePath) fullPath = path.join(uploadDir, document.filePath);
       }
       
       console.log('[Preview] Full path:', fullPath);
@@ -505,16 +504,15 @@ router.get('/download/:id', protect, async (req, res) => {
       console.log('[Download] Using local file fallback');
       let fullPath = null;
       const uploadDir = path.join(__dirname, '../../uploads');
-      
-      // First try filePath (which should always have local filename)
-      if (document.filePath) {
-        fullPath = path.join(uploadDir, document.filePath);
+      // First try filename (updated to latest version)
+      if (document.filename) {
+        fullPath = path.join(uploadDir, document.filename);
       }
       
-      // If not found, try filename
+      // If not found or filename not set (e.g. first version local fallback), try filePath
       if (!fullPath || !fs.existsSync(fullPath)) {
-        if (document.filename) {
-          fullPath = path.join(uploadDir, document.filename);
+        if (document.filePath) {
+          fullPath = path.join(uploadDir, document.filePath);
         }
       }
       
