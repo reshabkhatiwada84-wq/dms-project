@@ -1,7 +1,70 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, API_URL } from '../context/AuthContext';
-import { X, Download, FileText, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Download, FileText, AlertCircle, RefreshCw, Globe, ChevronDown, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+// ─────────────────────────────────────────────
+// Language list for translation
+// ─────────────────────────────────────────────
+const LANGUAGES = [
+  { code: 'hi', name: 'Hindi' },
+  { code: 'bn', name: 'Bengali' },
+  { code: 'mr', name: 'Marathi' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'te', name: 'Telugu' },
+  { code: 'gu', name: 'Gujarati' },
+  { code: 'pa', name: 'Punjabi' },
+  { code: 'ml', name: 'Malayalam' },
+  { code: 'ne', name: 'Nepali' },
+  { code: 'mni-Mtei', name: 'Manipuri' },
+  { code: 'kn', name: 'Kannada' },
+  { code: 'or', name: 'Odia' },
+  { code: 'ur', name: 'Urdu' },
+  { code: 'as', name: 'Assamese' },
+  { code: 'en', name: 'English' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'zh-CN', name: 'Chinese (Simplified)' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'pt', name: 'Portuguese' },
+];
+
+// ─────────────────────────────────────────────
+// Translation helper using Google Translate free API
+// Splits long text into chunks to avoid URL limits
+// ─────────────────────────────────────────────
+const translateText = async (text, targetLang) => {
+  const MAX_CHUNK = 4000;
+  const chunks = [];
+  for (let i = 0; i < text.length; i += MAX_CHUNK) {
+    chunks.push(text.slice(i, i + MAX_CHUNK));
+  }
+
+  let detectedLang = null;
+  const translatedChunks = [];
+
+  for (const chunk of chunks) {
+    if (!chunk.trim()) continue;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(chunk)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Translation API request failed');
+    const data = await res.json();
+
+    // Detected language is in data[2]
+    if (!detectedLang && data[2]) {
+      detectedLang = data[2];
+    }
+
+    // Translated sentences are in data[0] as array of [translated, original]
+    const translated = (data[0] || []).map(item => item[0] || '').join('');
+    translatedChunks.push(translated);
+  }
+
+  return { translatedText: translatedChunks.join('\n'), detectedLang };
+};
 
 // ─────────────────────────────────────────────
 // DOCX renderer helper with retry logic
@@ -111,6 +174,120 @@ const XlsxRenderer = ({ blob, onError }) => {
 };
 
 // ─────────────────────────────────────────────
+// TranslateButton component with dropdown
+// ─────────────────────────────────────────────
+const TranslateButton = ({ detectedLang, isTranslating, onTranslate, onReset, isTranslated }) => {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Filter out detected language from dropdown
+  const filteredLangs = LANGUAGES.filter(l => l.code !== detectedLang);
+
+  const handleSelect = (lang) => {
+    setOpen(false);
+    onTranslate(lang);
+  };
+
+  if (isTranslated) {
+    return (
+      <button
+        onClick={onReset}
+        className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-amber-300 border border-amber-500/40 hover:bg-amber-500/10 transition-all"
+        title="Go back to original"
+      >
+        <Globe className="h-4 w-4" />
+        <span>View Original</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={isTranslating}
+        className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-sky-300 border border-sky-500/40 hover:bg-sky-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Translate document"
+      >
+        {isTranslating ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Globe className="h-4 w-4" />
+        )}
+        <span>{isTranslating ? 'Translating...' : '🌐 Translate'}</span>
+        {!isTranslating && <ChevronDown className="h-3.5 w-3.5 opacity-70" />}
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 w-52 max-h-72 overflow-y-auto bg-slate-900 border border-white/10 rounded-xl shadow-2xl z-50 custom-scrollbar">
+          <div className="p-2">
+            <p className="text-xs text-slate-500 px-2 py-1 mb-1">Translate to:</p>
+            {filteredLangs.map(lang => (
+              <button
+                key={lang.code}
+                onClick={() => handleSelect(lang)}
+                className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-sky-600/20 hover:text-white rounded-lg transition-colors"
+              >
+                {lang.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// Translated Preview Panel
+// ─────────────────────────────────────────────
+const TranslatedPanel = ({ text, targetLang, onReset, translationError }) => {
+  if (translationError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[45vh] gap-4 text-center">
+        <AlertCircle className="h-10 w-10 text-rose-400" />
+        <div>
+          <p className="text-slate-200 font-semibold">Translation Failed</p>
+          <p className="text-slate-400 text-sm mt-1">{translationError}</p>
+        </div>
+        <button
+          onClick={onReset}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white text-sm transition-colors"
+        >
+          View Original
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 px-1">
+        <Globe className="h-4 w-4 text-sky-400" />
+        <span className="text-xs text-sky-400 font-medium">
+          Translated to: <span className="text-sky-300 font-semibold">{LANGUAGES.find(l => l.code === targetLang)?.name || targetLang}</span>
+        </span>
+        <span className="ml-auto text-xs text-slate-500 italic">Temporary reading mode — original file unchanged</span>
+      </div>
+      <pre className="w-full h-[55vh] overflow-auto bg-slate-950 p-5 rounded-xl text-slate-200 font-sans text-sm text-left whitespace-pre-wrap border border-sky-500/20 leading-relaxed custom-scrollbar">
+        {text}
+      </pre>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
 // Main PreviewModal
 // ─────────────────────────────────────────────
 const PreviewModal = ({ isOpen, onClose, document }) => {
@@ -122,6 +299,14 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   const [retryKey, setRetryKey]     = useState(0);
   const videoRef                    = useRef(null);
 
+  // ── Translation state ───────────────────────
+  const [isTranslating, setIsTranslating]     = useState(false);
+  const [translatedText, setTranslatedText]   = useState('');
+  const [translationError, setTranslationError] = useState('');
+  const [detectedLang, setDetectedLang]       = useState(null);
+  const [targetLang, setTargetLang]           = useState(null);
+  const isTranslated = !!translatedText || !!translationError;
+
   // Reset ALL state when modal closes
   useEffect(() => {
     if (!isOpen) {
@@ -130,12 +315,24 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
       setPreviewUrl('');
       setTextContent('');
       setFileBlob(null);
+      // Reset translation state
+      setIsTranslating(false);
+      setTranslatedText('');
+      setTranslationError('');
+      setDetectedLang(null);
+      setTargetLang(null);
     }
   }, [isOpen]);
 
   // Load preview data whenever modal opens or retryKey changes
   useEffect(() => {
     if (!isOpen || !document) return;
+
+    // Also reset translation when document changes
+    setTranslatedText('');
+    setTranslationError('');
+    setDetectedLang(null);
+    setTargetLang(null);
 
     const loadPreview = async () => {
       setLoading(true);
@@ -200,7 +397,7 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
     setRetryKey(prev => prev + 1);
   };
 
-  // ── Download handler ─────────────────────────────────────────────────────
+  // ── Download handler — ALWAYS downloads original ──
   const handleDownload = async () => {
     try {
       const response = await api({ url: `/api/documents/download/${document._id}`, method: 'GET', responseType: 'blob' });
@@ -218,6 +415,119 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
     }
   };
 
+  // ── Extract raw text from the current document ──
+  const extractTextForTranslation = async () => {
+    const mime   = document.mimeType || '';
+    const isText = mime.startsWith('text/') || ['application/json', 'application/javascript', 'application/xml'].includes(mime);
+    const isPdf  = mime === 'application/pdf';
+    const isDocx = mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isXlsx = mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel' || document.originalName?.endsWith('.xlsx') || document.originalName?.endsWith('.xls');
+    const isImage = mime.startsWith('image/');
+    const isVideo = mime.startsWith('video/');
+
+    if (isImage || isVideo) {
+      throw new Error('Translation is not available for image and video files.');
+    }
+
+    // Text files — already in state
+    if (isText && textContent) {
+      return textContent;
+    }
+
+    // DOCX — use mammoth to extract raw text
+    if (isDocx && fileBlob) {
+      const mammoth = await import('mammoth');
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (!result.value.trim()) throw new Error('No readable text found in this document.');
+      return result.value;
+    }
+
+    // XLSX — extract all cell values as flat text
+    if (isXlsx && fileBlob) {
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const lines = [];
+      workbook.SheetNames.forEach(sheetName => {
+        lines.push(`--- Sheet: ${sheetName} ---`);
+        const ws = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        rows.forEach(row => {
+          const cells = row.filter(c => c !== undefined && c !== null && c !== '');
+          if (cells.length > 0) lines.push(cells.join('\t'));
+        });
+      });
+      const text = lines.join('\n');
+      if (!text.trim()) throw new Error('No readable text found in this spreadsheet.');
+      return text;
+    }
+
+    // PDF — fetch as text via server (server sends file bytes, we extract text using PDF.js)
+    if (isPdf) {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/documents/download/${document._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Could not fetch PDF for text extraction.');
+      const pdfBlob = await res.blob();
+      const arrayBuffer = await pdfBlob.arrayBuffer();
+
+      // Use PDF.js (available via CDN as a window global or dynamic import)
+      const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js').catch(() => null);
+
+      // Fallback: try window.pdfjsLib (if loaded globally)
+      const pdfjs = (pdfjsLib && pdfjsLib.default) || window.pdfjsLib;
+
+      if (!pdfjs) {
+        throw new Error('PDF text extraction is not supported in this browser environment. Try a text-based document instead.');
+      }
+
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      const textParts = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        textParts.push(pageText);
+      }
+      const fullText = textParts.join('\n\n');
+      if (!fullText.trim()) throw new Error('No readable text found in this PDF. It may be a scanned image PDF.');
+      return fullText;
+    }
+
+    throw new Error('Text extraction is not supported for this file type.');
+  };
+
+  // ── Handle translation click ──────────────────
+  const handleTranslate = async (lang) => {
+    setIsTranslating(true);
+    setTranslatedText('');
+    setTranslationError('');
+    setTargetLang(lang.code);
+
+    try {
+      const rawText = await extractTextForTranslation();
+      const { translatedText: result, detectedLang: detected } = await translateText(rawText, lang.code);
+      setTranslatedText(result);
+      setDetectedLang(detected);
+    } catch (err) {
+      console.error('Translation error:', err);
+      setTranslationError(err.message || 'Translation failed. Please check your internet connection and try again.');
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  // ── Reset translation ──
+  const handleResetTranslation = () => {
+    setTranslatedText('');
+    setTranslationError('');
+    setTargetLang(null);
+  };
+
   const mime    = document.mimeType || '';
   const isVideo = mime.startsWith('video/');
   const isImage = mime.startsWith('image/');
@@ -225,6 +535,9 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
   const isText  = mime.startsWith('text/') || ['application/json', 'application/javascript'].includes(mime);
   const isDocx  = mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const isXlsx  = mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel' || document.originalName?.endsWith('.xlsx') || document.originalName?.endsWith('.xls');
+
+  // Translation not supported for image/video
+  const canTranslate = !isImage && !isVideo;
 
   // ══════════════════════════════════════════════════════════════════════════
   // VIDEO — dedicated fullscreen modal
@@ -341,6 +654,29 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
       );
     }
 
+    // ── If in translation mode — show translated content ──
+    if (isTranslating) {
+      return (
+        <div className="flex flex-col items-center justify-center h-[45vh] gap-3">
+          <Loader2 className="h-10 w-10 animate-spin text-sky-400" />
+          <p className="text-slate-300 font-medium">Translating document...</p>
+          <p className="text-slate-500 text-sm">Extracting and translating text, please wait.</p>
+        </div>
+      );
+    }
+
+    if (isTranslated) {
+      return (
+        <TranslatedPanel
+          text={translatedText}
+          targetLang={targetLang}
+          onReset={handleResetTranslation}
+          translationError={translationError}
+        />
+      );
+    }
+
+    // ── Original preview ──
     if (isImage && previewUrl) {
       return (
         <div className="flex justify-center p-2 bg-slate-950/20 rounded-xl">
@@ -410,6 +746,11 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
             </h3>
             <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[500px]">
               {document.originalName} • {document.category}
+              {isTranslated && !translationError && (
+                <span className="ml-2 text-sky-400 font-medium">
+                  • 🌐 Translated ({LANGUAGES.find(l => l.code === targetLang)?.name})
+                </span>
+              )}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1">
@@ -427,13 +768,23 @@ const PreviewModal = ({ isOpen, onClose, document }) => {
           <p className="text-xs text-slate-400">
             Uploaded: {new Date(document.createdAt).toLocaleString()}
           </p>
-          <div className="flex space-x-3">
+          <div className="flex items-center space-x-3">
             <button
               onClick={onClose}
               className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-300 hover:text-white transition-colors border border-white/5 hover:bg-white/5"
             >
               Close
             </button>
+            {/* Translate button — hidden for image & video */}
+            {canTranslate && !loading && !error && (
+              <TranslateButton
+                detectedLang={detectedLang}
+                isTranslating={isTranslating}
+                onTranslate={handleTranslate}
+                onReset={handleResetTranslation}
+                isTranslated={isTranslated}
+              />
+            )}
             <button
               onClick={handleDownload}
               className="flex items-center space-x-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg hover:brightness-110 active:scale-95 transition-all"
